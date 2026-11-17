@@ -378,3 +378,13 @@ def test_stress_rules_table_covers_every_outcome():
     assert set(stress.RULES) == set(stress.WHAT_HAPPENED)
     assert (t["counts"] == "for clipping").sum() == len(stress.FOR_CLIPPING)
     assert (t["counts"] == "against clipping").sum() == len(stress.AGAINST_CLIPPING)
+
+
+def test_svg_output_is_reproducible(tmp_path):
+    from m5knobs import toy
+    from m5knobs.figures import toy as toy_fig
+    toy.main(steps=30, data=_toy_data(), results_dir=str(tmp_path))
+    a = toy_fig.draw(results_dir=str(tmp_path), out_dir=str(tmp_path / "a"))
+    b = toy_fig.draw(results_dir=str(tmp_path), out_dir=str(tmp_path / "b"))
+    for pa, pb in zip(a, b):
+        assert open(pa, "rb").read() == open(pb, "rb").read(), pa

@@ -6,7 +6,6 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-11-17T14:49:27.098435</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -35,17 +34,17 @@ L 457.2 130.61057
 L 457.2 167.355687 
 L 66.6 167.355687 
 z
-" clip-path="url(#p25044fe0a2)" style="fill: #f6f6f6; stroke: #f6f6f6; stroke-linejoin: miter"/>
+" clip-path="url(#p869a2df669)" style="fill: #f6f6f6; stroke: #f6f6f6; stroke-linejoin: miter"/>
    </g>
    <g id="line2d_1">
     <path d="M 66.6 93.865454 
 L 457.2 93.865454 
-" clip-path="url(#p25044fe0a2)" style="fill: none; stroke: #cccccc; stroke-width: 0.8; stroke-linecap: square"/>
+" clip-path="url(#p869a2df669)" style="fill: none; stroke: #cccccc; stroke-width: 0.8; stroke-linecap: square"/>
    </g>
    <g id="line2d_2">
     <path d="M 66.6 204.100803 
 L 457.2 204.100803 
-" clip-path="url(#p25044fe0a2)" style="fill: none; stroke: #cccccc; stroke-width: 0.8; stroke-linecap: square"/>
+" clip-path="url(#p869a2df669)" style="fill: none; stroke: #cccccc; stroke-width: 0.8; stroke-linecap: square"/>
    </g>
    <g id="text_1">
     <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="74.412" y="81.364791" transform="rotate(-0 74.412 81.364791)">Model</text>
@@ -127,7 +126,7 @@ L 457.2 204.100803
   </g>
  </g>
  <defs>
-  <clipPath id="p25044fe0a2">
+  <clipPath id="p869a2df669">
    <rect x="66.6" y="58.957594" width="390.6" height="158.004"/>
   </clipPath>
  </defs>

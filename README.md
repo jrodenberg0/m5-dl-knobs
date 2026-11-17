@@ -56,40 +56,45 @@ They read finished results from `results/` and never train. Read them in order:
   the whole Python process* as soon as it is imported, so validation keeps all series.
 - **Short-series padding**: series with ≤ 13 weeks are left-padded with zeros so the validation split exists.
 
-## Reproduce
+## Run the notebooks (no training)
 
 ```bash
+git clone https://github.com/jrodenberg0/m5-dl-knobs.git && cd m5-dl-knobs
 python3 -m venv .venv && source .venv/bin/activate          # Python 3.9–3.12
-pip install -r requirements.txt && pip install -e .
-python3 scripts/prepare_data.py            # downloads M5 (~450 MB) via datasetsforecast -> data/m5_weekly.parquet
-python3 -m pytest tests -m "not slow"      # ~15 s
+pip install -r requirements.txt && pip install -e . && pip install jupyterlab
+python3 scripts/download_results.py        # finished runs (~250 MB) from the GitHub release -> results/
+python3 scripts/prepare_data.py            # optional: M5 (~450 MB) -> data/, for the panel statistics in notebooks 01-02
+jupyter lab notebooks/                     # read 01 -> 06 in order
+```
 
-# Experiments (one results dir; finished runs are skipped on rerun). Devices are the ones the results in this repo used.
-python3 scripts/run_experiments.py --group f2,f3,f4          # setting cards + architecture table, MPS
+`scripts/download_results.py` checks the archive's SHA-256 and won't overwrite an existing `results/` (use `--force`).
+Without `data/`, notebooks 01 and 02 skip the panel-wide statistics and say so; everything else runs from `results/`.
+Headless, in order: `jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb`.
+If Jupyter's `python3` kernel points at another environment, run `python3 -m ipykernel install --user --name python3` from
+this one.
+
+Notebooks 03 to 05 write derived files to `results/` (`card_verdicts.json`, `es_sweep.json`, `stress_outcomes.json`,
+`f4_table.csv`) and notebook 06 reads them, so run 06 last. Notebook 06 checks they are newer than the newest finished run,
+then rewrites `FINDINGS.md`.
+
+## Retrain from scratch
+
+```bash
+python3 scripts/prepare_data.py            # required for training
+python3 -m pytest tests -m "not slow"      # ~20 s
+# One results dir; finished runs are skipped on rerun.
+python3 scripts/run_experiments.py --group f2,f3,f4          # setting cards + architecture table (ACCEL defaults to mps)
 ACCEL=cpu python3 scripts/run_experiments.py --group es      # early-stopping study, CPU: ~1 h
-ACCEL=cpu python3 scripts/run_experiments.py --group stress  # clipping stress test, CPU
+ACCEL=cpu python3 scripts/run_experiments.py --group stress  # clipping stress test
 python3 scripts/toy_clip.py                                  # 2-weight toy fit (fixed 5,000-series sample)
 ```
 
 Tweedie runs take tens of minutes each on an Apple M4 (training plus in-sample scoring and prediction); the full set takes
 several hours. Each run's `fit_seconds` is in its `summary.json` (under `fold_stats`), also the "fit s" column of `FINDINGS.md`.
-
-Then run the notebooks, which draw `figures/` and write `FINDINGS.md`:
-
-```bash
-pip install jupyterlab
-jupyter lab notebooks/
-# or headless, in order:
-jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
-```
-
-If the `python3` kernel resolves to another environment, run `python3 -m ipykernel install --user --name python3` from this
-environment.
-
-Notebooks 03 to 05 write derived files to `results/` (`card_verdicts.json`, `es_sweep.json`, `stress_outcomes.json`,
-`f4_table.csv`) and notebook 06 reads them, so run 06 last. Notebook 06 checks they are newer than the newest finished run,
-then rewrites `FINDINGS.md`.
-`python3 -m pytest tests -m slow` executes every notebook against `results/` (skipped when `results/` is missing).
+The results in this repo: setting cards, early-stopping study and architecture table on an Apple M4 (MPS, the study on CPU);
+the Tweedie stress test on a Databricks GPU node (A10G). `python3 -m pytest tests -m slow` executes every notebook against
+`results/` (skipped when `results/` is missing). Maintainers: `python3 scripts/download_results.py --pack results.tar.gz`
+builds the release archive and prints the SHA-256 to put in `m5knobs/download.py`.
 
 - **Locations**: `RESULTS_DIR` sets the results location for both training and the notebooks and figures; `FIG_DIR` sets where
   figures go; `FINDINGS_PATH` sets where notebook 06 writes `FINDINGS.md` (the slow test points it and `FIG_DIR` at a temp
@@ -98,7 +103,7 @@ then rewrites `FINDINGS.md`.
   evaluation-phase test days through 2016-06-19). The Kaggle download alone (`sales_train_evaluation.csv`) ends 4 weeks earlier,
   shifts every origin, and won't reproduce these numbers. The final weekly bucket holds one day and is excluded from scoring.
 - **Devices**: `ACCEL` defaults to `mps`; use `cpu` or `gpu` elsewhere. For this small model the CPU was faster per step than MPS,
-  which is why the two studies ran on CPU. Runs made by the current runner record their device in `summary.json`; the Huber
+  which is why the early-stopping study ran on CPU. Runs made by the current runner record their device in `summary.json`; the Huber
   setting-card runs (including the early-stopping card) were made before that and show "not recorded". LightGBM runs on CPU.
 - **Determinism**: on the same machine and device, reruns are bit-identical (checked across Python 3.9 and 3.12). Across devices
   or machines expect small differences. The seed-noise bar used in the figures comes from the author's earlier 3-seed runs of the

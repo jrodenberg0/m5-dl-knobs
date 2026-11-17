@@ -7,10 +7,20 @@ import pandas as pd
 from m5knobs import paths
 
 
+GET_RESULTS = "run `python scripts/download_results.py` to fetch the finished runs, or train them with scripts/run_experiments.py"
+
+
+def check_available(results_dir: str = paths.RESULTS):
+    """Stop with instructions when results_dir has no finished runs."""
+    runs = os.path.join(results_dir, "runs")
+    if not (os.path.isdir(runs) and any(os.path.exists(os.path.join(runs, r, "DONE")) for r in os.listdir(runs))):
+        raise SystemExit(f"no finished runs in {results_dir}: {GET_RESULTS}")
+
+
 def require(arm_ids, results_dir: str = paths.RESULTS, seeds=(1,)):
     missing = [f"{a}__s{s}" for a in arm_ids for s in seeds if not os.path.exists(os.path.join(results_dir, "runs", f"{a}__s{s}", "DONE"))]
     if missing:
-        raise SystemExit("missing results: " + ", ".join(missing) + " (run scripts/run_experiments.py first)")
+        raise SystemExit("missing results: " + ", ".join(missing) + f" ({GET_RESULTS})")
 
 
 def load_run(arm_id: str, results_dir: str = paths.RESULTS, seed: int = 1) -> dict:

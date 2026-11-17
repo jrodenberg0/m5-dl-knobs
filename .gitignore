@@ -8,3 +8,6 @@ scratch/
 .superpowers/
 *.pyc
 dev/LEDGER.md
+/dist
+.venv/
+*.egg-info/

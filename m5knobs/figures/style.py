@@ -21,14 +21,15 @@ def apply():
         "axes.spines.top": False, "axes.spines.right": False, "axes.edgecolor": "#bbbbbb", "axes.linewidth": 0.6,
         "axes.grid": True, "grid.color": COLORS["grid"], "grid.linewidth": 0.5, "xtick.color": "#555555", "ytick.color": "#555555",
         "legend.frameon": False, "svg.fonttype": "none",
+        "svg.hashsalt": "m5-dl-knobs",  # stable clip-path ids, so re-drawn SVGs only differ when the figure does
     })
 
 
 def save(fig, name: str, out_dir: str = paths.FIGURES) -> list:
     os.makedirs(out_dir, exist_ok=True)
     out = [os.path.join(out_dir, f"{name}.{ext}") for ext in ("png", "svg")]
-    fig.savefig(out[0], dpi=200, bbox_inches="tight", pad_inches=0.12, facecolor="white")
-    fig.savefig(out[1], bbox_inches="tight", pad_inches=0.12, facecolor="white")
+    fig.savefig(out[0], dpi=200, bbox_inches="tight", pad_inches=0.12, facecolor="white", metadata={"Software": None})
+    fig.savefig(out[1], bbox_inches="tight", pad_inches=0.12, facecolor="white", metadata={"Date": None})
     plt.close(fig)
     return out
 
