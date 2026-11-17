@@ -1,0 +1,10 @@
+results*/
+data/
+figures_draft/
+mlruns/
+__pycache__/
+lightning_logs/
+scratch/
+.superpowers/
+*.pyc
+dev/LEDGER.md

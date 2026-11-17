@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="474.584578pt" height="244.449166pt" viewBox="0 0 474.584578 244.449166" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-11-16T20:05:51.034761</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.9.4, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 244.449166 
+L 474.584578 244.449166 
+L 474.584578 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 66.6 130.61057 
+L 457.2 130.61057 
+L 457.2 167.355687 
+L 66.6 167.355687 
+z
+" clip-path="url(#pf980ee100e)" style="fill: #f6f6f6; stroke: #f6f6f6; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 66.6 93.865454 
+L 457.2 93.865454 
+" clip-path="url(#pf980ee100e)" style="fill: none; stroke: #cccccc; stroke-width: 0.8; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 66.6 204.100803 
+L 457.2 204.100803 
+" clip-path="url(#pf980ee100e)" style="fill: none; stroke: #cccccc; stroke-width: 0.8; stroke-linecap: square"/>
+   </g>
+   <g id="text_1">
+    <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="74.412" y="81.364791" transform="rotate(-0 74.412 81.364791)">Model</text>
+   </g>
+   <g id="text_2">
+    <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="191.592" y="81.364791" transform="rotate(-0 191.592 81.364791)">WAPE</text>
+   </g>
+   <g id="text_3">
+    <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="238.464" y="81.364791" transform="rotate(-0 238.464 81.364791)">Bias</text>
+   </g>
+   <g id="text_4">
+    <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="308.772" y="81.364791" transform="rotate(-0 308.772 81.364791)">Δ vs LGBM</text>
+   </g>
+   <g id="text_5">
+    <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="343.926" y="81.364791" transform="rotate(-0 343.926 81.364791)">p</text>
+   </g>
+   <g id="text_6">
+    <text style="fill: #8a8a8a; font: 700 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="355.644" y="81.364791" transform="rotate(-0 355.644 81.364791)">Read</text>
+   </g>
+   <g id="text_7">
+    <text style="font: 700 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="74.412" y="114.907544" transform="rotate(-0 74.412 114.907544)">LGBM (baseline)</text>
+   </g>
+   <g id="text_8">
+    <text style="font: 700 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="191.592" y="114.823169" transform="rotate(-0 191.592 114.823169)">45.35</text>
+   </g>
+   <g id="text_9">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="238.464" y="114.823169" transform="rotate(-0 238.464 114.823169)">-7.4%</text>
+   </g>
+   <g id="text_10">
+    <text style="fill: #8a8a8a; font: 8px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="355.644" y="114.306137" transform="rotate(-0 355.644 114.306137)">baseline</text>
+   </g>
+   <g id="text_11">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="74.412" y="151.568285" transform="rotate(-0 74.412 151.568285)">N-HiTS</text>
+   </g>
+   <g id="text_12">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="191.592" y="151.568285" transform="rotate(-0 191.592 151.568285)">46.51</text>
+   </g>
+   <g id="text_13">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="238.464" y="151.568285" transform="rotate(-0 238.464 151.568285)">-0.8%</text>
+   </g>
+   <g id="text_14">
+    <text style="fill: #d1495b; font: 700 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="308.772" y="151.568285" transform="rotate(-0 308.772 151.568285)">+1.17</text>
+   </g>
+   <g id="text_15">
+    <text style="font: 9px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="343.926" y="151.309769" transform="rotate(-0 343.926 151.309769)">&lt;0.001</text>
+   </g>
+   <g id="text_16">
+    <text style="fill: #8a8a8a; font: 8px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="355.644" y="151.070629" transform="rotate(-0 355.644 151.070629)">worse (significant)</text>
+   </g>
+   <g id="text_17">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="74.412" y="188.313401" transform="rotate(-0 74.412 188.313401)">TCN</text>
+   </g>
+   <g id="text_18">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="191.592" y="188.313401" transform="rotate(-0 191.592 188.313401)">45.35</text>
+   </g>
+   <g id="text_19">
+    <text style="font: 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="238.464" y="188.313401" transform="rotate(-0 238.464 188.313401)">-4.1%</text>
+   </g>
+   <g id="text_20">
+    <text style="fill: #8a8a8a; font: 700 10px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="308.772" y="188.313401" transform="rotate(-0 308.772 188.313401)">+0.01</text>
+   </g>
+   <g id="text_21">
+    <text style="font: 9px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: end" x="343.926" y="188.054886" transform="rotate(-0 343.926 188.054886)">0.970</text>
+   </g>
+   <g id="text_22">
+    <text style="fill: #8a8a8a; font: 8px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="355.644" y="187.79637" transform="rotate(-0 355.644 187.79637)">within seed noise</text>
+   </g>
+   <g id="text_23">
+    <text style="fill: #8a8a8a; font: 6.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'" transform="translate(74.412 219.875432)">M5 weekly, 30,490 item-store series, rolling origin (3 folds × 13 weeks, refit each fold; the partial final week is not scored), single seed,</text>
+    <text style="fill: #8a8a8a; font: 6.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'" transform="translate(74.412 227.36465)">Tweedie loss for all. p = paired bootstrap over series. 'Within seed noise' = |Δ| &lt; 0.2 WAPE (earlier M5 seed spread).</text>
+    <text style="fill: #8a8a8a; font: 6.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'" transform="translate(74.412 234.45026)">LGBM: factory weekly recipe, direct (one model per lead), lags 1–26, rolling 4/13/26/52, calendar features, stock mlforecast transforms.</text>
+   </g>
+  </g>
+  <g id="text_24">
+   <text style="fill: #555555; font: 8.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="8.64" y="35.718828" transform="rotate(-0 8.64 35.718828)">Same series, same folds, same Tweedie loss. Lower WAPE is better; bias = total forecast vs total actual.</text>
+  </g>
+  <g id="text_25">
+   <text style="fill: #111111; font: 700 13px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="8.64" y="18.142188" transform="rotate(-0 8.64 18.142188)">N-HiTS trailed LGBM by 1.17 WAPE, and TCN was level with LGBM</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pf980ee100e">
+   <rect x="66.6" y="58.957594" width="390.6" height="158.004"/>
+  </clipPath>
+ </defs>
+</svg>
