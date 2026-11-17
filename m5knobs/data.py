@@ -88,21 +88,16 @@ def pick_examples(panel: pd.DataFrame, cutoff) -> list:
     return out
 
 
-def pick_seasonal(panel: pd.DataFrame, cutoff, exclude=()) -> str:
-    """Third example series, fixed by rule: among dense series (zero share < 0.2 over the last 104 weeks, >= 156 weeks of
-    history) in the top decile of lag-52 autocorrelation, the one nearest the median volume."""
-    hist = panel[(panel["ds"] <= cutoff) & (panel["ds"] > cutoff - pd.Timedelta(weeks=156))]
-    rows = []
-    for uid, g in hist.groupby("unique_id", sort=True):
-        y = g.sort_values("ds")["y"].to_numpy(float)
-        if uid in exclude or len(y) < 156 or (y[-104:] == 0).mean() >= 0.2 or np.std(y) == 0:
-            continue
-        a, b = y[52:] - y[52:].mean(), y[:-52] - y[:-52].mean()
-        den = np.sqrt((a ** 2).sum() * (b ** 2).sum())
-        rows.append((uid, float((a * b).sum() / den) if den > 0 else 0.0, y[-52:].sum()))
-    st = pd.DataFrame(rows, columns=["uid", "ac52", "vol"])
-    top = st[st["ac52"] >= st["ac52"].quantile(0.9)]
-    return str(top.loc[(top["vol"] - top["vol"].median()).abs().sort_values(kind="mergesort").index[0], "uid"])
+def write_history(panel: pd.DataFrame, cutoff, out_path: str, weeks: int = 60) -> str:
+    """Write the last `weeks` weeks of every series up to and including cutoff (unique_id, ds, y) to out_path."""
+    cutoff = pd.Timestamp(cutoff)
+    h = panel[(panel["ds"] > cutoff - pd.Timedelta(weeks=weeks)) & (panel["ds"] <= cutoff)][["unique_id", "ds", "y"]].copy()
+    h["unique_id"] = h["unique_id"].astype(str)
+    h["y"] = h["y"].astype("float32")
+    h = h.sort_values(["unique_id", "ds"], kind="mergesort").reset_index(drop=True)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    h.to_parquet(out_path, index=False)
+    return out_path
 
 
 def main():

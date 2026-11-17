@@ -1,14 +1,14 @@
 # The knobs that make deep learning fit supply-chain data
 
 Which training settings make a deep model (N-HiTS in stock [NeuralForecast](https://github.com/Nixtla/neuralforecast)) fit
-intermittent weekly retail demand, and how much each one matters, tested on all 30,490 M5 item-store series. The notebooks walk
-through the evidence for each setting; everything is reproducible from the public M5 data. This repo is self-contained; it started
+intermittent weekly retail demand, and how much each one matters, tested on all 30,490 M5 item-store series, and where it beats a LightGBM baseline. One notebook walks
+through the evidence; everything is reproducible from the public M5 data. This repo is self-contained; it started
 as the code for the article *Making Deep Learning Sing; In Supply Chain Forecasting*.
 
 ## The recipe
 
 `m5knobs.model.Knobs` defaults. The clipping card, the clipping stress test and the architecture table use it as is; the other
-setting cards and the early-stopping sweep differ from it as described in notebook 03 (for example, they use Huber δ5 loss).
+setting cards and the early-stopping sweep differ from it as described in section 2 of the notebook (for example, they use Huber δ5 loss).
 
 - Tweedie loss (rho 1.5), RevIN scaling, 52-week input window.
 - NAdam (weight decay 0.01, decoupled), one-cycle LR peaking at 1e-3, at most 5,000 steps.
@@ -20,26 +20,35 @@ Setup: weekly data, 13-week horizon, 3 rolling origins, single seed (1).
 
 ## Read the story
 
-The notebooks put four claims that practitioners often make to the test:
+`notebooks/m5_deep_learning_story.ipynb` reads finished results from `results/` and never trains. Top to bottom:
 
-1. A handful of training settings decide whether deep learning works on retail demand.
-2. Getting those settings wrong mostly makes the model underfit.
-3. Gradient clipping is non-negotiable for likelihood losses such as Tweedie.
-4. With the right settings, deep learning can match gradient-boosted trees.
+1. **The problem**: how sparse weekly M5 demand is, the forecast setup, and how results are judged (WMAPE and |bias|, the
+   verdict rule, the seed-noise bar, the two rules set after seeing results).
+2. **The recipe**: every training setting, the exact NeuralForecast call, and a check of the Tweedie zero-window guard.
+3. **One setting at a time**: gradient clipping, input window, early stopping, loss and scaler. Each one is a claim, one
+   figure, the computed verdict with WMAPE and |bias| for both settings, and what to set.
+4. **Clipping under stress**: three stressors with clipping off and on.
+5. **Deep learning vs LightGBM**: why stock Tweedie loses (its floor of about one unit a week), where N-HiTS with Huber loss
+   wins (total volume, mostly on fast, steady sellers), and where LightGBM still wins.
+6. **Where to use deep learning on weekly retail**: every model and setting in one table, computed takeaways by segment,
+   four practitioner claims with their verdicts, and the caveats. Writes `FINDINGS.md`.
 
-They read finished results from `results/` and never train. Read them in order:
+Every example series is chosen by a rule in `m5knobs/examples.py`, tied to the mechanism its section claims, and the
+notebook says how typical it is. The figures, in `figures/` as PNG and SVG:
 
-1. `notebooks/01_the_problem.ipynb`: how sparse weekly M5 demand is, the forecast setup, and how results are judged (WAPE,
-   bias, the verdict rule, the seed-noise bar, the two rules set after seeing results).
-2. `notebooks/02_the_recipe.ipynb`: every training setting, why it is there, the exact NeuralForecast call, and what
-   `m5knobs/model.py` adds, including a check of the Tweedie zero-window guard.
-3. `notebooks/03_one_setting_at_a_time.ipynb`: claims 1 and 2. Five setting cards, each changing one setting away from the
-   recipe, plus a sweep of the early-stopping rule.
-4. `notebooks/04_gradient_clipping.ipynb`: claim 3. Clipping on a two-weight toy fit, at the recipe's settings, and under three
-   stressors.
-5. `notebooks/05_dl_vs_lightgbm.ipynb`: claim 4. N-HiTS and TCN against a LightGBM baseline, same series, origins and loss.
-6. `notebooks/06_summary.ipynb`: every verdict in one table, the four claims with their verdicts, run status and caveats; writes
-   `FINDINGS.md`.
+| figure | shows |
+|---|---|
+| `story_clipping` | clip off vs AutoClip (Tweedie): the unclipped model over-forecasts |
+| `story_input_window` | `input_size` 13 vs 52: the 52-week forecast follows last year's pattern |
+| `story_early_stopping` | patience 250 vs 1,000 steps: the short window gives a flatter forecast |
+| `story_loss` | MAE vs Huber: MAE under-forecasts intermittent series (bottom panel: those series) |
+| `story_scaler` | MinMax vs RevIN: no clear harm, a typical series |
+| `story_stress` | the clipping stress test (training traces, not forecasts) |
+| `story_tweedie_floor` | stock Tweedie vs Huber: forecasts stay near one unit a week on mostly-zero series |
+| `story_segments` | each deep model minus LightGBM, WMAPE and \|bias\|, by volume quartile and share of zero weeks |
+| `story_segments_detail` | the same by department and by forecast origin |
+| `story_dl_wins` | where N-HiTS Huber wins: total volume on fast, steady sellers |
+| `story_lightgbm_wins` | where LightGBM wins: the segment with its largest WMAPE lead |
 
 ## What `m5knobs/model.py` adds to stock NeuralForecast
 
@@ -49,7 +58,7 @@ They read finished results from `results/` and never train. Read them in order:
   clamped to [1e-9, 37]), with one change: the window mean is floored at 0.01 before the log. Without it, an all-zero input
   window (common on M5) takes `log(0)` and the gradient into RevIN's learnable parameters is NaN on the first step, so every
   Tweedie run fails immediately. Everywhere else the link is identical to stock, including its floor: forecasts can't go below
-  the input window's mean, nor below about 1 unit a week. Both floors are in sales units, not scaled units; notebook 05 shows
+  the input window's mean, nor below about 1 unit a week. Both floors are in sales units, not scaled units; section 5 of the notebook shows
   where forecasts on slow sellers land.
 - **Validation keeps every series**: with `drop_last_loader=True`, stock NeuralForecast 3.1.2 also drops the last partial batch
   of series from every validation check (26 of 30,490 here). `m5knobs/model.py` replaces NeuralForecast's data-module class *for
@@ -62,20 +71,18 @@ They read finished results from `results/` and never train. Read them in order:
 git clone https://github.com/jrodenberg0/m5-dl-knobs.git && cd m5-dl-knobs
 python3 -m venv .venv && source .venv/bin/activate          # Python 3.9–3.12
 pip install -r requirements.txt && pip install -e . && pip install jupyterlab
-python3 scripts/download_results.py        # finished runs (~250 MB) from the GitHub release -> results/
-python3 scripts/prepare_data.py            # optional: M5 (~450 MB) -> data/, for the panel statistics in notebooks 01-02
-jupyter lab notebooks/                     # read 01 -> 06 in order
+python3 scripts/download_results.py        # finished runs + sales history (~250 MB) from GitHub release results-v2 -> results/
+jupyter lab notebooks/m5_deep_learning_story.ipynb
 ```
 
 `scripts/download_results.py` checks the archive's SHA-256 and won't overwrite an existing `results/` (use `--force`).
-Without `data/`, notebooks 01 and 02 skip the panel-wide statistics and say so; everything else runs from `results/`.
-Headless, in order: `jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb`.
+The notebook needs only `results/`, not `data/`. It runs in about two minutes.
+Headless: `jupyter nbconvert --to notebook --execute --inplace notebooks/m5_deep_learning_story.ipynb`.
 If Jupyter's `python3` kernel points at another environment, run `python3 -m ipykernel install --user --name python3` from
 this one.
 
-Notebooks 03 to 05 write derived files to `results/` (`card_verdicts.json`, `es_sweep.json`, `stress_outcomes.json`,
-`f4_table.csv`) and notebook 06 reads them, so run 06 last. Notebook 06 checks they are newer than the newest finished run,
-then rewrites `FINDINGS.md`.
+The notebook writes derived files to `results/` (`card_verdicts.json`, `es_sweep.json`, `stress_outcomes.json`,
+`f4_table.csv`), checks they are newer than the newest finished run, then rewrites `FINDINGS.md`.
 
 ## Retrain from scratch
 
@@ -92,12 +99,15 @@ python3 scripts/toy_clip.py                                  # 2-weight toy fit 
 Tweedie runs take tens of minutes each on an Apple M4 (training plus in-sample scoring and prediction); the full set takes
 several hours. Each run's `fit_seconds` is in its `summary.json` (under `fold_stats`), also the "fit s" column of `FINDINGS.md`.
 The results in this repo: setting cards, early-stopping study and architecture table on an Apple M4 (MPS, the study on CPU);
-the Tweedie stress test on a Databricks GPU node (A10G). `python3 -m pytest tests -m slow` executes every notebook against
+the Tweedie stress test on a Databricks GPU node (A10G). `python3 -m pytest tests -m slow` executes the notebook against
 `results/` (skipped when `results/` is missing). Maintainers: `python3 scripts/download_results.py --pack results.tar.gz`
-builds the release archive and prints the SHA-256 to put in `m5knobs/download.py`.
+builds the release archive and prints the SHA-256 to put in `m5knobs/download.py`. The runner writes `results/history.parquet`
+(every series' 60 weeks up to the first origin); for a results dir made before it existed, write it once from `data/` with
+`python3 -c "from m5knobs import data, results; data.write_history(data.load_panel(0), results.actuals()['cutoff'].min(), 'results/history.parquet')"`.
+Series whose first sale comes after the first origin have no rows in it.
 
 - **Locations**: `RESULTS_DIR` sets the results location for both training and the notebooks and figures; `FIG_DIR` sets where
-  figures go; `FINDINGS_PATH` sets where notebook 06 writes `FINDINGS.md` (the slow test points it and `FIG_DIR` at a temp
+  figures go; `FINDINGS_PATH` sets where the notebook writes `FINDINGS.md` (the slow test points it and `FIG_DIR` at a temp
   dir). Set them before importing `m5knobs` (they are read once, in `m5knobs/paths.py`).
 - **Data**: `scripts/prepare_data.py` uses `datasetsforecast`'s M5 loader (Nixtla's public mirror, including the
   evaluation-phase test days through 2016-06-19). The Kaggle download alone (`sales_train_evaluation.csv`) ends 4 weeks earlier,
@@ -107,24 +117,24 @@ builds the release archive and prints the SHA-256 to put in `m5knobs/download.py
   setting-card runs (including the early-stopping card) were made before that and show "not recorded". LightGBM runs on CPU.
 - **Determinism**: on the same machine and device, reruns are bit-identical (checked across Python 3.9 and 3.12). Across devices
   or machines expect small differences. The seed-noise bar used in the figures comes from the author's earlier 3-seed runs of the
-  same model family on M5 (not part of this repo, so treat ±0.2 WAPE / ±1pt bias as an approximate bar). The high-learning-rate stress runs are chaotic and may differ more.
+  same model family on M5 (not part of this repo, so treat ±0.2 WMAPE / ±1pt bias as an approximate bar). The high-learning-rate stress runs are chaotic and may differ more.
 - **One results dir per configuration**: `scripts/run_experiments.py` writes `results/manifest.json` (panel size, smoke mode,
   recipe) and refuses to mix runs made with different settings. `N_SERIES` (default 30,490) and `SMOKE=1` (100-step test runs)
   are for quick checks; use a separate `--results-dir` for them.
 
-How results are judged (WAPE, bias, the verdict rule and the two rules set after seeing results) is in
-`notebooks/01_the_problem.ipynb`.
+How results are judged (WMAPE, bias, the verdict rule and the two rules set after seeing results) is in section 1 of
+`notebooks/m5_deep_learning_story.ipynb`. WMAPE is the same number `FINDINGS.md` calls WAPE.
 
 ## Repo layout
 
 ```
 README.md
-FINDINGS.md                 every number behind the figures (written by notebook 06)
-notebooks/                  the story, 01 to 06, committed with outputs
+FINDINGS.md                 every number behind the figures (written by the notebook)
+notebooks/                  m5_deep_learning_story.ipynb, committed with outputs
 scripts/
   prepare_data.py           download M5 -> data/m5_weekly.parquet
   run_experiments.py        train the arms (--group, --arms, --seeds, --results-dir, --rescore)
-  toy_clip.py               the 2-weight toy fit -> results/toy_*
+  toy_clip.py               the 2-weight toy fit -> results/toy_* (reported in FINDINGS.md only)
 m5knobs/
   paths.py                  repo locations; RESULTS_DIR, FIG_DIR, FINDINGS_PATH, M5_WEEKLY override them
   data.py                   the weekly panel, forecast cutoffs, example series
@@ -135,8 +145,12 @@ m5knobs/
   baselines.py              LightGBM baseline
   toy.py                    the 2-weight Tweedie toy fit
   report.py                 writes FINDINGS.md
-  figures/                  drawing code for each figure (style, cards, stress, early_stopping, architectures, toy)
-tests/                      fast suite; -m slow runs the notebooks
+  examples.py               rules that pick each figure's example series, with typicality counts
+  segments.py               deep learning vs LightGBM by segment
+  story.py                  text and table helpers for the notebook
+  figures/                  compare (overlay figures), segments, stress; cards, early_stopping and architectures
+                            compute the verdicts and tables FINDINGS.md reads
+tests/                      fast suite; -m slow runs the notebook
 results/  data/             training output and the M5 panel (gitignored)
 figures/                    PNG and SVG figures
 ```

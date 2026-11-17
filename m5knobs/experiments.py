@@ -203,6 +203,8 @@ def run(arm_ids, seeds=(1,), results_dir=paths.RESULTS):
     act = actuals(panel, cutoffs)
     if not os.path.exists(os.path.join(results_dir, "actuals.parquet")):  # several runner processes may share one results dir
         act.to_parquet(os.path.join(results_dir, "actuals.parquet"))
+    if not os.path.exists(os.path.join(results_dir, "history.parquet")):
+        data.write_history(panel, cutoffs[0], os.path.join(results_dir, "history.parquet"))
     if not os.path.exists(os.path.join(results_dir, "examples.json")):
         with open(os.path.join(results_dir, "examples.json"), "w") as f:
             json.dump(data.pick_examples(panel, cutoffs[0]), f)

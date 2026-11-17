@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from m5knobs import scoring
+from m5knobs import data, scoring
 from m5knobs.experiments import ARMS
 
 CUTS = [pd.Timestamp("2016-01-02") + pd.Timedelta(weeks=13 * i) for i in range(3)]
@@ -20,9 +20,7 @@ def make(results_dir, n_series=20, steps=50, seed=0):
     act = pd.concat([panel[(panel.ds > c) & (panel.ds <= c + pd.Timedelta(weeks=13))].assign(cutoff=c) for c in CUTS], ignore_index=True)
     os.makedirs(os.path.join(results_dir, "runs"), exist_ok=True)
     act.to_parquet(os.path.join(results_dir, "actuals.parquet"))
-    panel[panel.unique_id.isin(["s3", "s7", "s5"])].to_parquet(os.path.join(results_dir, "examples_history.parquet"))
-    with open(os.path.join(results_dir, "examples3.json"), "w") as f:
-        json.dump(["s3", "s7", "s5"], f)
+    data.write_history(panel, CUTS[0], os.path.join(results_dir, "history.parquet"))
     with open(os.path.join(results_dir, "examples.json"), "w") as f:
         json.dump(["s3", "s7"], f)
     for a in ARMS:

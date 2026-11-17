@@ -24,13 +24,13 @@ DERIVED = ("card_verdicts.json", "stress_outcomes.json", "es_sweep.json", "f4_ta
 
 
 def check_derived_fresh(results_dir=paths.RESULTS):
-    """Stop unless every file notebooks 03-05 derive exists and is newer than the newest finished run."""
+    """Stop unless every file the story notebook derives exists and is newer than the newest finished run."""
     done = [os.path.getmtime(p) for p in glob.glob(os.path.join(results_dir, "runs", "*", "DONE"))]
     newest = max(done, default=0.0)
     bad = [f for f in DERIVED if not os.path.exists(os.path.join(results_dir, f))
            or os.path.getmtime(os.path.join(results_dir, f)) < newest]
     if bad:
-        raise SystemExit(f"run notebooks 03–05 first: missing or older than the newest finished run in results/: {', '.join(bad)}")
+        raise SystemExit(f"run notebooks/m5_deep_learning_story.ipynb first: missing or older than the newest finished run in results/: {', '.join(bad)}")
 
 
 def run_status(results_dir=paths.RESULTS) -> pd.DataFrame:
@@ -64,10 +64,58 @@ def unforecast(results_dir=paths.RESULTS):
     return dict(per_min=per.min(), per_max=per.max(), units=miss["y"].sum(), total=act["y"].sum())
 
 
-def write(results_dir=paths.RESULTS, out=None):
+def _segment_section(results_dir, n_boot) -> list:
+    """Deep learning vs LightGBM: overall gaps with bootstrap p, claim 4 judged on N-HiTS Huber (f3_fix), and per-segment tables.
+    Empty when history.parquet (results-v2) or one of the compared runs is missing."""
+    from m5knobs import segments
+    if not (os.path.exists(os.path.join(results_dir, "history.parquet")) and all(_done(a, results_dir) for a in segments.MODELS.values())):
+        return []
+    M = segments.MODELS
+    g = segments.gap_rows(results_dir, n_boot=n_boot)
+    pfmt = lambda p: "" if pd.isna(p) else "<0.001" if p < 0.001 else f"{p:.3f}"  # noqa: E731
+    dfmt = lambda d: "" if pd.isna(d) else f"{d:+.2f}"  # noqa: E731
+    L = ["## Deep learning vs LightGBM by segment", "",
+         "WMAPE = Σ|error| / Σ actual (the WAPE above); bias = Σ forecast / Σ actual − 1, and |bias| its size. Same series, weeks and "
+         "scoring for every model. LightGBM (`f4_lgbm`) is refit at every origin; N-HiTS Huber (`f3_fix`) is the pre-set recipe, fit "
+         f"once at the first origin. N-HiTS Huber, best of 5 ES (`{M['N-HiTS Huber, best of 5 ES']}`) is the best of 5 early-stopping "
+         "settings from the early-stopping study, picked after seeing the results. The Tweedie rows are the deep models of the "
+         "architecture comparison. Δ and p are against LightGBM (paired bootstrap over series).", "",
+         "| model | arm | WMAPE | Δ WMAPE | p | bias | \\|bias\\| | Δ \\|bias\\| | p |", "|---|---|---|---|---|---|---|---|---|"]
+    for r in g.itertuples():
+        L.append(f"| {r.model} | {r.arm} | {r.wape:.2f} | {dfmt(r.gap)} | {pfmt(r.p)} | {r.bias:+.1f}% | {r.abs_bias:.1f}% | "
+                 f"{dfmt(r.abs_bias_gap)} | {pfmt(r.p_abs_bias)} |")
+    gi = g.set_index("model")
+    huber = gi.loc["N-HiTS Huber"]
+    L += ["", "- " + segments.claim_text(dict(wape_a=huber.wape, wape_b=gi.loc[segments.BASE, "wape"], gap=huber.gap, p=huber.p,
+                                                bias_a=huber.bias, bias_b=gi.loc[segments.BASE, "bias"], p_abs_bias=huber.p_abs_bias)),
+          "- With the stock Tweedie loss: " + "; ".join(
+              f"{m} {gi.loc[m, 'gap']:+.2f} WMAPE vs LightGBM ({segments.p_text(gi.loc[m, 'p'])}), bias {gi.loc[m, 'bias']:+.1f}%"
+              for m in M if "Tweedie" in m) + f" (LightGBM {gi.loc[segments.BASE, 'bias']:+.1f}%).", ""]
+    seg = segments.series_segments(results_dir)
+    act = pd.read_parquet(os.path.join(results_dir, "actuals.parquet"), columns=["unique_id", "y"])
+    nohist = set(seg.loc[seg["volume quartile"].isna(), "unique_id"])
+    L += [f"Segments: volume quartile = quartile of mean weekly sales over the {segments.HIST_WEEKS} weeks before the first origin "
+          f"(equal series counts, Q1 slowest); zero weeks = share of those weeks with no sales; department = first two parts of the "
+          f"item id; origin = forecast origin. {len(nohist):,} series have no sales history in that window "
+          f"({100 * act.loc[act.unique_id.isin(nohist), 'y'].sum() / act['y'].sum():.2f}% of actual volume): they are left out of the "
+          "volume and zero-week segments and kept in department and origin. Segments with no actual sales are dropped. "
+          "Cells: WMAPE / bias.", ""]
+    t = segments.segment_table(results_dir)
+    for kind in segments.KINDS:
+        k = t[t.segment_kind == kind]
+        L += [f"### By {kind}", "", "| segment | series | share of volume | " + " | ".join(M) + " |", "|---" * (3 + len(M)) + "|"]
+        for s, d in k.groupby("segment", sort=False):
+            d = d.set_index("model")
+            L.append(f"| {s} | {d['n_series'].iloc[0]:,} | {100 * d['vol_share'].iloc[0]:.1f}% | "
+                     + " | ".join(f"{d.at[m, 'wape']:.2f} / {d.at[m, 'bias']:+.1f}%" for m in M) + " |")
+        L.append("")
+    return L
+
+
+def write(results_dir=paths.RESULTS, out=None, n_boot=2000):
     out = out or paths.FINDINGS
     L = ["# Findings: training settings for deep learning on M5", "",
-         "Generated by `notebooks/06_summary.ipynb` from `results/`. Single seed (1) for every arm; "
+         "Generated by `notebooks/m5_deep_learning_story.ipynb` from `results/`. Single seed (1) for every arm; "
          f"earlier M5 seed noise ≈ {SEED_NOISE['wape']} WAPE, ±{SEED_NOISE['bias']:.0f}pt bias (author's earlier 3-seed M5 runs).", ""]
 
     L += ["## Run status", "", "| arm | status | device | WAPE | bias | stop step | best step | hit cap | fit s |", "|---|---|---|---|---|---|---|---|---|"]
@@ -155,6 +203,8 @@ def write(results_dir=paths.RESULTS, out=None):
         L += ["## Architecture comparison (refit at every origin, Tweedie)", "", t.to_markdown(index=False, floatfmt=".3f"),
               "", "LightGBM: direct (one model per lead), lags 1–26, rolling mean/std/max/min over 4/13/26/52 weeks, expanding mean, calendar "
               "features.", ""]
+
+    L += _segment_section(results_dir, n_boot)
 
     with open(out, "w") as f:
         f.write("\n".join(L) + "\n")

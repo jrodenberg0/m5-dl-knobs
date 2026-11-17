@@ -112,7 +112,7 @@ WHAT_HAPPENED = {"stabilized": "clip off diverged, AutoClip did not", "rescued":
 
 RULES = {"stabilized": "clip off diverged and AutoClip did not",
          "rescued": "clip off crashed (NaN loss) and AutoClip finished",
-         "helped": "neither run diverged, and the verdict rule (notebook 01) gives clip off underfit, biased or both",
+         "helped": "neither run diverged, and the verdict rule gives clip off underfit, biased or both",
          "diverged": "both runs diverged",
          "both failed": "both runs crashed",
          "clip diverged": "only AutoClip diverged",
@@ -196,7 +196,7 @@ def _val(ax, off, on):
 def _nums(ax, off, on, text):
     ax.set_axis_off()
     for y, run, side, lab in ((0.86, off, "mistake", "clip off"), (0.56, on, "fix", "AutoClip")):
-        s = (f"WAPE {run['summary']['wape']:.1f} · bias {run['summary']['bias']:+.1f}%" if run["ok"] else f"crashed: {run['error']}")
+        s = (f"WMAPE {run['summary']['wape']:.1f} · bias {run['summary']['bias']:+.1f}%" if run["ok"] else f"crashed: {run['error']}")
         ax.text(0, y, lab, transform=ax.transAxes, fontsize=7.5, color=COLORS[side], fontweight="bold", va="top")
         ax.text(0, y - 0.11, s, transform=ax.transAxes, fontsize=7.2, color="#222222", va="top")
     import textwrap
@@ -204,7 +204,7 @@ def _nums(ax, off, on, text):
             linespacing=1.25)
 
 
-def draw(results_dir=paths.RESULTS, out_dir=paths.FIGURES, n_boot=2000):
+def draw(results_dir=paths.RESULTS, out_dir=paths.FIGURES, n_boot=2000, name="story_stress"):
     style.apply()
     keys = list(STRESSORS)
     fig, axes = plt.subplots(len(keys), 3, figsize=(style.WIDTH, 1.75 * len(keys) + 1.3),
@@ -232,5 +232,5 @@ def draw(results_dir=paths.RESULTS, out_dir=paths.FIGURES, n_boot=2000):
              "the divergence rule (validation loss ending above 2× its best) was set after seeing the results.",
              fontsize=8, color="#555555", va="top", linespacing=1.4)
     json.dump(outcomes, open(os.path.join(results_dir, "stress_outcomes.json"), "w"), indent=1)
-    return style.save(fig, "card_clipping_stress", out_dir)
+    return style.save(fig, name, out_dir)
 

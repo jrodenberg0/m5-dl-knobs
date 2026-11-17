@@ -3567,13 +3567,13 @@ L 360.749822 160.703581
     <text style="fill: #d1495b; font: 700 7.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="98.208416" transform="rotate(-0 400.183669 98.208416)">clip off</text>
    </g>
    <g id="text_23">
-    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="106.620645" transform="rotate(-0 400.183669 106.620645)">WAPE 48.7 · bias +5.8%</text>
+    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="106.620645" transform="rotate(-0 400.183669 106.620645)">WMAPE 48.7 · bias +5.8%</text>
    </g>
    <g id="text_24">
     <text style="fill: #2e86ab; font: 700 7.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="121.964887" transform="rotate(-0 400.183669 121.964887)">AutoClip</text>
    </g>
    <g id="text_25">
-    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="130.31032" transform="rotate(-0 400.183669 130.31032)">WAPE 48.6 · bias +5.7%</text>
+    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="130.31032" transform="rotate(-0 400.183669 130.31032)">WMAPE 48.6 · bias +5.7%</text>
    </g>
    <g id="text_26">
     <text style="font: 700 6.8px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="146.607467" transform="rotate(-0 400.183669 146.607467)">no measurable difference</text>
@@ -7236,13 +7236,13 @@ L 360.749822 290.996791
     <text style="fill: #d1495b; font: 700 7.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="228.501625" transform="rotate(-0 400.183669 228.501625)">clip off</text>
    </g>
    <g id="text_50">
-    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="236.913855" transform="rotate(-0 400.183669 236.913855)">WAPE 49.5 · bias +6.9%</text>
+    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="236.913855" transform="rotate(-0 400.183669 236.913855)">WMAPE 49.5 · bias +6.9%</text>
    </g>
    <g id="text_51">
     <text style="fill: #2e86ab; font: 700 7.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="252.258096" transform="rotate(-0 400.183669 252.258096)">AutoClip</text>
    </g>
    <g id="text_52">
-    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="260.603529" transform="rotate(-0 400.183669 260.603529)">WAPE 49.2 · bias +5.7%</text>
+    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="260.603529" transform="rotate(-0 400.183669 260.603529)">WMAPE 49.2 · bias +5.7%</text>
    </g>
    <g id="text_53">
     <text style="font: 700 6.8px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="276.954864" transform="rotate(-0 400.183669 276.954864)">clipping improved the fit and removed bias</text>
@@ -12897,13 +12897,13 @@ L 360.749822 421.29
     <text style="fill: #d1495b; font: 700 7.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="358.794834" transform="rotate(-0 400.183669 358.794834)">clip off</text>
    </g>
    <g id="text_80">
-    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="367.207064" transform="rotate(-0 400.183669 367.207064)">WAPE 48.3 · bias +5.7%</text>
+    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="367.207064" transform="rotate(-0 400.183669 367.207064)">WMAPE 48.3 · bias +5.7%</text>
    </g>
    <g id="text_81">
     <text style="fill: #2e86ab; font: 700 7.5px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="382.551306" transform="rotate(-0 400.183669 382.551306)">AutoClip</text>
    </g>
    <g id="text_82">
-    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="390.896738" transform="rotate(-0 400.183669 390.896738)">WAPE 47.8 · bias +5.9%</text>
+    <text style="fill: #222222; font: 7.2px 'Helvetica Neue', 'Arial', 'DejaVu Sans'; text-anchor: start" x="400.183669" y="390.896738" transform="rotate(-0 400.183669 390.896738)">WMAPE 47.8 · bias +5.9%</text>
    </g>
    <g id="text_83">
     <text style="font: 700 6.8px 'Helvetica Neue', 'Arial', 'DejaVu Sans'" transform="translate(400.183669 407.248073)">clipping improved the fit; clipping shrank</text>

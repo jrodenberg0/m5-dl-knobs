@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from m5knobs.data import pick_examples, weekly_from_daily
+from m5knobs.data import pick_examples, weekly_from_daily, write_history
 
 CUT = pd.Timestamp("2016-01-02")
 
@@ -37,22 +37,6 @@ def test_load_panel_fixed():
     assert a.unique_id.nunique() == 5000
 
 
-def test_pick_seasonal_finds_seasonal_series():
-    from m5knobs.data import pick_seasonal
-    rng = np.random.default_rng(1)
-    ds = pd.date_range(end=CUT, periods=200, freq="W-SAT")
-    rows = []
-    for i in range(20):
-        base = rng.poisson(20, len(ds)).astype(float)
-        if i == 7:
-            base = 20 + 15 * np.sin(2 * np.pi * np.arange(len(ds)) / 52) + rng.normal(0, 1, len(ds))
-        rows.append(pd.DataFrame({"unique_id": f"s{i}", "ds": ds, "y": base}))
-    p = pd.concat(rows, ignore_index=True)
-    a = pick_seasonal(p, CUT, exclude=["s0"])
-    assert a == pick_seasonal(p, CUT, exclude=["s0"])
-    assert a == "s7"
-
-
 def test_weekly_from_daily_wsat_sums_trims_and_keeps_partial():
     ds = pd.date_range("2016-01-01", "2016-01-24", freq="D")  # Fri .. Sun
     a = pd.DataFrame({"unique_id": "a", "ds": ds, "y": 1.0})
@@ -64,3 +48,15 @@ def test_weekly_from_daily_wsat_sums_trims_and_keeps_partial():
     wb = w[w.unique_id == "b"]
     assert wb["y"].iloc[0] > 0 and wb.ds.min() == pd.Timestamp("2016-01-16")  # leading zero weeks dropped
     assert list(w.columns) == ["unique_id", "ds", "y"]
+
+
+def test_write_history_window(tmp_path):
+    ds = pd.date_range(end=CUT + pd.Timedelta(weeks=10), periods=80, freq="W-SAT")
+    p = pd.concat([pd.DataFrame({"unique_id": u, "ds": ds, "y": 1.0}) for u in ("b", "a")], ignore_index=True)
+    out = write_history(p, CUT, str(tmp_path / "history.parquet"))
+    h = pd.read_parquet(out)
+    assert list(h.columns) == ["unique_id", "ds", "y"] and h["y"].dtype == "float32"
+    assert h["ds"].max() == CUT and (h["ds"] <= CUT).all()
+    assert h.groupby("unique_id")["ds"].nunique().eq(60).all()
+    assert h["ds"].min() == CUT - pd.Timedelta(weeks=59)
+    assert h.equals(h.sort_values(["unique_id", "ds"]).reset_index(drop=True))

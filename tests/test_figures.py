@@ -18,27 +18,13 @@ def _png_ok(path, min_w=1200):
     assert Image.open(path).size[0] >= min_w
 
 
-def test_all_cards_render(res, tmp_path):
+def test_card_verdicts_written(res):
+    import json
     from m5knobs.figures import cards
-    paths = cards.draw(results_dir=res, out_dir=str(tmp_path / "fig"), n_boot=20)
-    names = {os.path.basename(p) for p in paths}
-    for k in ("clipping", "input_size", "early_stopping", "loss", "scaler"):
-        assert f"card_{k}.png" in names and f"card_{k}.svg" in names
-        assert Image.open(os.path.join(tmp_path, "fig", f"card_{k}.png")).size[0] >= 1200
-
-
-def test_headline_no_effect_makes_no_recommendation():
-    from m5knobs.figures import cards
-    card = cards.CARDS[4]
-    h = cards.headline(card, {"label": "no clear effect on M5"}, dict(wape=45.75, bias=-0.6), dict(wape=45.68, bias=-3.4))
-    assert "no measurable difference" in h and card["action"] not in h
-
-
-def test_headline_reports_moved_metric():
-    from m5knobs.figures import cards
-    card = cards.CARDS[0]
-    h = cards.headline(card, {"label": "biased"}, dict(wape=48.0, bias=4.8), dict(wape=46.9, bias=0.1))
-    assert card["action"] in h and "+4.8%" in h and "+0.1%" in h
+    V = cards.verdicts(results_dir=res, n_boot=20)
+    assert set(V) == {c["key"] for c in cards.CARDS}
+    assert json.load(open(os.path.join(res, "card_verdicts.json"))) == json.loads(json.dumps(V))
+    assert all(set(v) == {"label", "wape_gap", "abs_bias_gap_pts", "wape", "bias", "moved", "try_line"} for v in V.values())
 
 
 def test_read_lists_only_hurt_measures():
@@ -56,24 +42,16 @@ def test_card_knobs_name_neuralforecast_params():
                      "early_stopping": "early_stop_patience_steps × val_check_steps", "loss": "loss", "scaler": "scaler_type"}
 
 
-def test_f4_headline_from_table():
-    from m5knobs.figures import architectures
-    t = pd.DataFrame([dict(model="LGBM (baseline)", wape=46.49, gap_vs_lgbm=None, read="baseline"),
-                      dict(model="N-HiTS", wape=46.84, gap_vs_lgbm=0.35, read="worse (not significant)"),
-                      dict(model="TCN", wape=45.59, gap_vs_lgbm=-0.90, read="better (significant)")])
-    h = architectures.headline_text(t)
-    assert "TCN beat LGBM by 0.90 WAPE" in h and "N-HiTS" in h
-
-
-def test_stress_and_sweep_figures_render(res, tmp_path):
+def test_stress_figure_and_sweep_json(res, tmp_path):
+    import json
     from m5knobs.figures import stress
     from m5knobs.figures import early_stopping
-    p1 = stress.draw(results_dir=res, out_dir=str(tmp_path / "fig"), n_boot=20)
-    p2 = early_stopping.draw(results_dir=res, out_dir=str(tmp_path / "fig"))
-    for p in p1 + p2:
-        assert os.path.exists(p)
-    assert Image.open(os.path.join(tmp_path, "fig", "card_clipping_stress.png")).size[0] >= 1200
-    assert Image.open(os.path.join(tmp_path, "fig", "card_early_stopping_sweep.png")).size[0] >= 1200
+    p = stress.draw(results_dir=res, out_dir=str(tmp_path / "fig"), n_boot=20)
+    _png_ok(p[0])
+    assert os.path.basename(p[0]) == "story_stress.png"
+    S = early_stopping.sweep(results_dir=res)
+    assert json.load(open(os.path.join(res, "es_sweep.json"))) == json.loads(json.dumps(S))
+    assert list(early_stopping.patience_table(S)["window"]) == [250, 500, 1000, 2000, 4000]
 
 
 def test_sweep_headline_names_best_window():
@@ -149,10 +127,9 @@ def test_no_unsupported_max_steps_claim():
     assert all("max_steps" not in c["try_effect"] for c in cards.CARDS)
 
 
-def test_f4_renders(res, tmp_path):
+def test_f4_table_written(res):
     from m5knobs.figures import architectures
-    architectures.draw(results_dir=res, out_dir=str(tmp_path / "fig"), n_boot=50)
-    _png_ok(str(tmp_path / "fig" / "f4_table.png"), min_w=1000)
+    architectures.write_table(results_dir=res, n_boot=50)
     t = pd.read_csv(os.path.join(res, "f4_table.csv"))
     assert list(t["model"]) == ["LGBM (baseline)", "N-HiTS", "TCN"]
     assert t["p_vs_lgbm"].dropna().between(0, 1).all()
@@ -178,14 +155,6 @@ def test_toy_clip_paths(tmp_path):
     assert mx["clipped"] <= mx["unclipped"] + 1e-12
     assert np.isfinite(surf["loss"]).all()
     assert os.path.exists(os.path.join(str(tmp_path), "toy_paths.parquet"))
-
-
-def test_f1_renders(tmp_path):
-    from m5knobs.figures import toy as toy_fig
-    from m5knobs import toy
-    toy.main(steps=30, data=_toy_data(), results_dir=str(tmp_path))
-    toy_fig.draw(results_dir=str(tmp_path), out_dir=str(tmp_path / "fig"))
-    _png_ok(str(tmp_path / "fig" / "f1_toy.png"), min_w=1000)
 
 
 NONE = "no clear effect on M5"
@@ -227,11 +196,11 @@ def test_what_moved_no_effect_branches():
     from m5knobs.figures import cards
     ms, fs = dict(wape=45.12, bias=-0.6), dict(wape=45.27, bias=-3.6)
     assert _clean(cards.what_moved(_v(NONE, 0.05, 0.3), "x", ms, fs)) == \
-        "Nothing moved beyond seed noise (WAPE Δ +0.05, |bias| Δ +0.3pt)."
+        "Nothing moved beyond seed noise (WMAPE Δ +0.05, |bias| Δ +0.3pt)."
     assert _clean(cards.what_moved(_v(NONE, -0.15, -3.0), "x", ms, fs)) == \
         "Moved beyond seed noise without meeting the verdict rule: |bias| was 3.0pt smaller with x (bias -0.6% vs -3.6%)."
     assert _clean(cards.what_moved(_v(NONE, -0.5, 2.0), "x", ms, fs)) == \
-        ("Moved beyond seed noise without meeting the verdict rule: WAPE was 0.50 lower with x (45.12 vs 45.27) "
+        ("Moved beyond seed noise without meeting the verdict rule: WMAPE was 0.50 lower with x (45.12 vs 45.27) "
          "and |bias| was 2.0pt larger with x (bias -0.6% vs -3.6%).")
 
 
@@ -239,16 +208,8 @@ def test_what_moved_effect_lists_hurt_measures_with_and():
     from m5knobs.figures import cards
     r = cards.what_moved(_v("underfit", 1.3, 0.0, insample_mae=True, corr=True, amp_ratio=True), "input_size = 13")
     assert _clean(r) == ("With input_size = 13, these got worse: fit to the training history, week-to-week tracking and how much "
-                         "the forecast moves, which went flatter (WAPE +1.30).")
+                         "the forecast moves, which went flatter (WMAPE +1.30).")
     assert ") (" not in r
-
-
-def test_card_verdict_text_is_the_one_way_card_verdict():
-    from m5knobs.figures import cards
-    v = dict(label="both", wape_gap=0.5, abs_bias_gap_pts=2.0, wape=[45.0, 44.5], bias=[-3.0, -1.0], moved="M.")
-    t = cards.verdict_text(cards.CARDS[0], v)
-    assert _clean(t) == ("Compared: `clip off` (without) vs `AutoClip, 10th percentile` (with). **Verdict on the 'without' run: "
-                         "underfit and biased.** WAPE 45.00 → 44.50, bias -3.0% → -1.0%. M.")
 
 
 def _V(labels, gaps):
@@ -261,7 +222,7 @@ def test_card_claims_mixed_case_exact():
     c = cards.claims(_V([NONE, "underfit", "underfit", "biased", NONE], [0.05, 1.3, 0.65, 0.18, -0.15]))
     assert _clean(c["handful"]) == (
         "3 of 5 cards gave the wrong value a verdict of underfit or biased: Input window, Early stopping and Loss function. "
-        "Largest WAPE gap among them: +1.30 (Input window). "
+        "Largest WMAPE gap among them: +1.30 (Input window). "
         "Verdict on the claim, read as 'for most of the tested settings, the wrong value measurably hurts': holds.")
     assert _clean(c["underfit"]) == (
         "2 of 5 cards gave the wrong value a verdict of underfit: Input window and Early stopping. "
@@ -276,7 +237,7 @@ def test_card_claims_none_and_one_and_all():
                                     "measurably hurts': does not hold.")
     assert c["underfit"].startswith("0 of 5 cards gave the wrong value a verdict of underfit. Verdict")
     c1 = cards.claims(_V(["both", NONE, NONE, NONE, NONE], [0.4, 0.0, 0.0, 0.0, 0.9]))
-    assert "1 of 5 cards gave the wrong value a verdict of underfit or biased: Gradient clipping. Largest WAPE gap among them: +0.40" \
+    assert "1 of 5 cards gave the wrong value a verdict of underfit or biased: Gradient clipping. Largest WMAPE gap among them: +0.40" \
         in _clean(c1["handful"]) and "underfit: Gradient clipping." in c1["underfit"]
     ca = cards.claims(_V(["underfit"] * 5, [0.3] * 5))
     assert ca["handful"].endswith(": holds.") and ca["underfit"].endswith(": holds.")
@@ -330,24 +291,11 @@ def test_stress_describe_has_no_raw_tags():
     assert stress.describe(dict(outcome="both failed", label=None)) == "both runs crashed"
 
 
-def test_f4_headline_and_claim_text():
-    from m5knobs.figures import architectures
-    t = pd.DataFrame([dict(model="LGBM (baseline)", wape=45.0, gap_vs_lgbm=None, read="baseline"),
-                      dict(model="N-HiTS", wape=45.5, gap_vs_lgbm=0.5, read="worse (not significant)"),
-                      dict(model="TCN", wape=45.0, gap_vs_lgbm=0.0, read="within seed noise"),
-                      dict(model="X", wape=44.0, gap_vs_lgbm=-1.0, read="better (significant)")])
-    h = architectures.headline_text(t)
-    assert _clean(h) == ("N-HiTS trailed LGBM by 0.50 WAPE (not significant), TCN was level with LGBM and X beat LGBM by 1.00 WAPE")
-    assert _clean(architectures.claim_text(t)) == "Level with or better than LGBM on WAPE: TCN and X. Verdict on the claim: holds."
-    assert _clean(architectures.claim_text(t.iloc[:2])) == \
-        "No deep model was level with or better than LGBM on WAPE. Verdict on the claim: does not hold."
-
-
 def test_card_claims_size_relative_to_with_run():
     from m5knobs.figures import cards
     V = _V([NONE, "underfit", NONE, NONE, NONE], [0.0, 1.3, 0.0, 0.0, 0.0])
     V["input_size"]["wape"] = [46.57, 45.27]
-    assert "Largest WAPE gap among them: +1.30 (Input window, 2.9% of the 'with' run's WAPE)." in _clean(cards.claims(V)["handful"])
+    assert "Largest WMAPE gap among them: +1.30 (Input window, 2.9% of the 'with' run's WMAPE)." in _clean(cards.claims(V)["handful"])
 
 
 def test_stress_best_checkpoint_reported_when_clip_off_scored_better():
@@ -378,13 +326,3 @@ def test_stress_rules_table_covers_every_outcome():
     assert set(stress.RULES) == set(stress.WHAT_HAPPENED)
     assert (t["counts"] == "for clipping").sum() == len(stress.FOR_CLIPPING)
     assert (t["counts"] == "against clipping").sum() == len(stress.AGAINST_CLIPPING)
-
-
-def test_svg_output_is_reproducible(tmp_path):
-    from m5knobs import toy
-    from m5knobs.figures import toy as toy_fig
-    toy.main(steps=30, data=_toy_data(), results_dir=str(tmp_path))
-    a = toy_fig.draw(results_dir=str(tmp_path), out_dir=str(tmp_path / "a"))
-    b = toy_fig.draw(results_dir=str(tmp_path), out_dir=str(tmp_path / "b"))
-    for pa, pb in zip(a, b):
-        assert open(pa, "rb").read() == open(pb, "rb").read(), pa

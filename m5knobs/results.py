@@ -1,4 +1,4 @@
-"""Readers for the results/ tree the experiment runner writes (runs, actuals, example series)."""
+"""Readers for the results/ tree the experiment runner writes (runs, actuals, history)."""
 import json
 import os
 
@@ -30,35 +30,13 @@ def load_run(arm_id: str, results_dir: str = paths.RESULTS, seed: int = 1) -> di
                 ins=rd("insample.parquet"), fc=rd("forecasts.parquet"))
 
 
-def examples(results_dir: str = paths.RESULTS) -> list:
-    return json.load(open(os.path.join(results_dir, "examples.json")))
-
-
 def actuals(results_dir: str = paths.RESULTS) -> pd.DataFrame:
     return pd.read_parquet(os.path.join(results_dir, "actuals.parquet"))
 
 
-def examples3(results_dir: str = paths.RESULTS) -> list:
-    """[steady seller, intermittent, seasonal]: the runner's two rule-picked series plus data.pick_seasonal (cached)."""
-    p = os.path.join(results_dir, "examples3.json")
+def history(results_dir: str = paths.RESULTS) -> pd.DataFrame:
+    """Every series' 60 weeks up to and including the first origin (unique_id, ds, y); shipped from results-v2 on."""
+    p = os.path.join(results_dir, "history.parquet")
     if not os.path.exists(p):
-        from m5knobs import data
-        act = actuals(results_dir)
-        panel = data.load_panel(0)
-        panel = panel[panel.unique_id.isin(set(act["unique_id"]))]
-        ex = examples(results_dir)
-        ex = ex + [data.pick_seasonal(panel, act["cutoff"].min(), exclude=ex)]
-        json.dump(ex, open(p, "w"))
-        panel[panel.unique_id.isin(ex)].to_parquet(os.path.join(results_dir, "examples_history.parquet"))
-    return json.load(open(p))
-
-
-def example_history(results_dir: str = paths.RESULTS) -> pd.DataFrame:
-    """Full history of the example series (cached in results/ on first use)."""
-    p = os.path.join(results_dir, "examples_history.parquet")
-    ex = examples3(results_dir) if os.path.exists(os.path.join(results_dir, "examples3.json")) else examples(results_dir)
-    if not os.path.exists(p) or not set(ex) <= set(pd.read_parquet(p, columns=["unique_id"]).unique_id):
-        from m5knobs import data
-        panel = data.load_panel(0)
-        panel[panel.unique_id.isin(ex)].to_parquet(p)
+        raise SystemExit(f"{p} is missing (results from before results-v2): re-run `python scripts/download_results.py --force`")
     return pd.read_parquet(p)

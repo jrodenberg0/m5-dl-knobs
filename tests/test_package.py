@@ -8,7 +8,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def test_light_import_does_not_load_torch():
     code = ("import m5knobs.data, m5knobs.scoring, m5knobs.experiments, m5knobs.results, m5knobs.report, m5knobs.figures.style, "
             "m5knobs.figures.cards, m5knobs.figures.stress, m5knobs.figures.early_stopping, m5knobs.figures.architectures, "
-            "m5knobs.figures.toy, sys; print('torch' in sys.modules, 'neuralforecast' in sys.modules)")
+            "m5knobs.figures.compare, m5knobs.figures.segments, m5knobs.examples, m5knobs.segments, m5knobs.story, sys; print('torch' in sys.modules, 'neuralforecast' in sys.modules)")
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
     assert out == ["False", "False"]
 

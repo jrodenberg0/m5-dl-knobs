@@ -12,9 +12,9 @@ import urllib.request
 
 from m5knobs import paths
 
-TAG = "results-v1"
+TAG = "results-v2"
 URL = f"https://github.com/jrodenberg0/m5-dl-knobs/releases/download/{TAG}/results.tar.gz"
-SHA256 = "51ae99da7d0e67091d3b005582dc49ec1f3c76ccecc3efb15a7e47531ca17f0d"  # dist/results.tar.gz for release results-v1
+SHA256 = "dfb9527cc7abccc03f4d5ddb7608315a8d8029ec767e57ffe005ab72f655990d"  # dist/results-v2.tar.gz, uploaded as results.tar.gz to release results-v2
 
 # Files the notebooks rebuild from the runs; shipping them could leave stale verdicts next to fresh runs.
 DERIVED_SKIP = {"card_verdicts.json", "stress_outcomes.json", "es_sweep.json", "f4_table.csv"}
