@@ -117,7 +117,8 @@ def rescore(results_dir=os.path.join(HERE, "results")):
 
 def manifest() -> dict:
     """What every run in one results dir must share; the device may differ per run and is recorded in each summary."""
-    return dict(n_series=int(common.N_SERIES), smoke=bool(os.environ.get("SMOKE")), recipe=json.dumps(common.RECIPE, sort_keys=True))
+    return dict(n_series=int(common.N_SERIES), smoke=bool(os.environ.get("SMOKE")), recipe=json.dumps(common.RECIPE, sort_keys=True),
+                tweedie_link="neuralforecast+zero_guard")
 
 
 def check_manifest(results_dir):

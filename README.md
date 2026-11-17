@@ -39,9 +39,11 @@ restored, AutoClip at the 10th percentile, training windows need ≥ 5% real his
 
 - **AutoClip** (Seetharaman et al. 2020): each step, clip the gradient norm to the 10th percentile of the norms seen so far.
 - **Best-weights restore**: Lightning's early stopping only stops; this loads the best validation checkpoint's weights back.
-- **Tweedie output link**: `log μ = clamp(raw, −6, 6) + log(max(window mean, 0.01))`. Stock NeuralForecast's Tweedie link
-  uses `softplus`, which forces the forecast to be at least the input window's mean (and at least 1), a built-in over-forecast on
-  intermittent series.
+- **Tweedie zero-window guard**: the Tweedie loss and output link are NeuralForecast's own (`softplus(raw) + log(window mean)`,
+  clamped to [1e-9, 37]), with one change: the window mean is floored at 0.01 before the log. Without it, an all-zero input
+  window (common on M5) takes `log(0)` and the gradient into RevIN's learnable parameters is NaN on the first step, so every
+  Tweedie run fails immediately. Everywhere else the link is identical to stock, including its floor: forecasts can't go below
+  the input window's mean, nor below about 1.
 - **Validation keeps every series**: with `drop_last_loader=True`, stock NeuralForecast 3.1.2 also drops the last partial batch
   of series from every validation check (26 of 30,490 here). `knobs.py` replaces NeuralForecast's data-module class *for the whole
   Python process* as soon as it is imported, so validation keeps all series.
@@ -93,8 +95,6 @@ above 2× its best, i.e. not recovering).
 
 `prepare_data.py` data · `knobs.py` model · `arms.py` experiments · `run_experiments.py` runner · `verdict.py` labeling rule ·
 `fig_*.py` figures · `findings.py` report · `toy_clip.py` toy fit · `lgbm_baseline.py` LightGBM · `tests/`.
-`dev/` holds the author's tools for checking this code against the original private implementation (see `docs/PARITY.md`);
-nothing else imports it.
 
 ## License
 

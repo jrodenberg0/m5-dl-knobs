@@ -66,13 +66,20 @@ def test_best_weights_ignores_sanity_check_and_nan():
     assert cb.state is None
 
 
-def test_tweedie_decouple_finite_at_zero_loc():
-    raw = torch.tensor([[100.0, -100.0, 0.0]])
-    mu, rho = knobs.tweedie_decouple((raw, torch.tensor(1.5)), loc=torch.zeros(1, 3), scale=torch.ones(1, 3))
-    assert torch.isfinite(mu).all()
-    assert mu[0, 0] == pytest.approx(6 + np.log(1e-2), abs=1e-5) and mu[0, 1] == pytest.approx(-6 + np.log(1e-2), abs=1e-5)
-    mu2, _ = knobs.tweedie_decouple((raw, torch.tensor(1.5)))
-    assert mu2.tolist() == [[6.0, -6.0, 0.0]]
+def test_tweedie_is_stock_neuralforecast_except_zero_windows():
+    from neuralforecast.losses.pytorch import DistributionLoss, tweedie_scale_decouple
+    loss = knobs.make_loss("tweedie", tweedie_rho=1.5)
+    assert type(loss) is DistributionLoss and loss.distribution == "Tweedie"
+    assert loss.scale_decouple is knobs.tweedie_zero_guard
+    raw, scale = torch.tensor([[-3.0, 0.0, 2.0, 40.0]]), torch.ones(1, 4)
+    loc = torch.tensor([[0.5, 2.0, 7.0, 3.0]])
+    ours, stock = knobs.tweedie_zero_guard((raw, 1.5), loc, scale)[0], tweedie_scale_decouple((raw, 1.5), loc, scale)[0]
+    assert torch.equal(ours, stock)  # identical to stock wherever the window mean is >= 0.01
+    raw = torch.zeros(1, 2, requires_grad=True)
+    w = torch.ones(1, requires_grad=True)
+    mu, _ = knobs.tweedie_zero_guard((raw, 1.5), torch.tensor([[0.0, 2.0]]) * w, torch.ones(1, 2))
+    mu.sum().backward()
+    assert torch.isfinite(mu).all() and torch.isfinite(raw.grad).all() and torch.isfinite(w.grad).all()
 
 
 def test_pad_short_pads_to_val_size_plus_one():
@@ -121,7 +128,7 @@ def test_built_model_matches_inventory():
                                                  anneal_strategy="cos", cycle_momentum=False)
     assert m.trainer_kwargs["min_steps"] == 1500
     assert m.early_stop_patience_steps == 20 and m.val_check_steps == 50
-    assert m.loss.scale_decouple is knobs.tweedie_decouple
+    assert m.loss.scale_decouple is knobs.tweedie_zero_guard
     assert {type(c).__name__ for c in m.trainer_kwargs["callbacks"]} >= {"AutoClip", "BestWeights"}
 
 

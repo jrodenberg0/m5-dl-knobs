@@ -1,9 +1,10 @@
 """Stock NeuralForecast plus the few training settings the article's experiments depend on.
 
 Everything here is either a plain NeuralForecast/Lightning argument set explicitly, or one of four small additions:
+  * tweedie_zero_guard: NeuralForecast's own Tweedie output link, with the window mean floored at 0.01 so an all-zero input
+    window doesn't take log(0) (NaN gradients through RevIN on step 1). Identical to stock everywhere else.
   * AutoClip: clip each update's gradient norm to a percentile of the norms seen so far in this fit (Seetharaman et al. 2020).
   * BestWeights: restore the weights from the best validation check when training ends (Lightning's EarlyStopping only stops).
-  * tweedie_decouple: a finite, symmetric Tweedie output link (stock NF takes log of the window mean, -inf on all-zero windows).
   * KeepValBatchDataModule: stock NF drops the last partial batch of series in *validation* when drop_last_loader=True; this keeps
     every series in every validation check (and keeps the training batch when there are fewer series than batch_size).
 Plus pad_short, which left-pads series too short for the validation split.
@@ -22,7 +23,7 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")  # Tweedie predictions
 import neuralforecast.common._base_model as _nfbm  # noqa: E402
 import neuralforecast.models as _nfm  # noqa: E402
 from neuralforecast import NeuralForecast  # noqa: E402
-from neuralforecast.losses.pytorch import MAE, DistributionLoss, HuberLoss  # noqa: E402
+from neuralforecast.losses.pytorch import MAE, DistributionLoss, HuberLoss, tweedie_scale_decouple  # noqa: E402
 from neuralforecast.tsdataset import TimeSeriesDataModule  # noqa: E402
 
 
@@ -99,12 +100,12 @@ class LRCapture(pl.Callback):
         self.lr.append(float(optimizer.param_groups[0]["lr"]))
 
 
-def tweedie_decouple(output, loc=None, scale=None):
-    """log(mu) = clamp(raw, -6, 6) + log(max(window mean, 1e-2)): finite for all-zero windows, no built-in floor at the mean."""
-    raw, rho = output
-    if loc is None or scale is None:
-        return (torch.clamp(raw, -6, 6), rho)
-    return (torch.clamp(raw, -6, 6) + torch.log(loc.clamp_min(1e-2)), rho)
+def tweedie_zero_guard(output, loc=None, scale=None):
+    """NeuralForecast's tweedie_scale_decouple, unchanged except loc is floored at 0.01: an all-zero input window has loc 0, and
+    stock takes log(0), which turns RevIN's gradient into NaN on the first step."""
+    if loc is not None:
+        loc = loc.clamp_min(1e-2)
+    return tweedie_scale_decouple(output, loc=loc, scale=scale)
 
 
 def make_loss(kind: str, huber_delta: float = 5.0, tweedie_rho: float = 1.5):
@@ -114,7 +115,7 @@ def make_loss(kind: str, huber_delta: float = 5.0, tweedie_rho: float = 1.5):
         return MAE()
     if kind == "tweedie":
         loss = DistributionLoss(distribution="Tweedie", rho=tweedie_rho)
-        loss.scale_decouple = tweedie_decouple
+        loss.scale_decouple = tweedie_zero_guard
         return loss
     raise ValueError(f"loss must be huber, mae or tweedie, got {kind!r}")
 

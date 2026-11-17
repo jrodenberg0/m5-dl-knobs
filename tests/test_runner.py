@@ -216,6 +216,10 @@ def test_manifest_mismatch_refuses(tmp_path, fake, monkeypatch):
         rx.run(["f2_noclip"], seeds=[1], results_dir=str(tmp_path))
 
 
+def test_manifest_records_tweedie_link():
+    assert rx.manifest()["tweedie_link"] == "neuralforecast+zero_guard"
+
+
 def test_cli_accepts_comma_separated_groups(monkeypatch):
     seen = {}
     monkeypatch.setattr(rx, "run", lambda ids, seeds, results_dir: seen.update(ids=ids))
