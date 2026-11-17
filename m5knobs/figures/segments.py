@@ -15,7 +15,7 @@ ROW_TITLES = {"volume quartile": f"By volume quartile (mean weekly sales, {HIST_
 PANELS = (("wape", "WMAPE", SEED_NOISE["wape"]), ("abs_bias", "|bias|", SEED_NOISE["bias"]))
 
 
-def draw(table: pd.DataFrame, models: list, out_dir: str = paths.FIGURES, kinds=KINDS, name: str = "fig4_segments",
+def draw(table: pd.DataFrame, models: list, name: str, out_dir: str = paths.FIGURES, kinds=KINDS,
          title: str = "Deep learning vs LightGBM by segment", subtitle: str = None) -> list:
     """table: segments.segment_table output; models: labels in table.model, LightGBM (segments.BASE) among them.
     One row per segment kind, two panels: WMAPE and |bias| of each other model minus LightGBM's (points), grouped by segment."""
@@ -35,7 +35,14 @@ def draw(table: pd.DataFrame, models: list, out_dir: str = paths.FIGURES, kinds=
             ax.axvline(0, color="#777777", lw=0.7, zorder=1)
             for i, m in enumerate(others):
                 d = t[t.model == m].set_index("segment").reindex(segs)
-                ax.barh(y - 0.4 + step * (i + 0.5), d[col] - base[col], step * 0.9, color=PALETTE[i], zorder=2, label=m)
+                yy, dd = y - 0.4 + step * (i + 0.5), (d[col] - base[col]).to_numpy()
+                ax.barh(yy, dd, step * 0.9, color=PALETTE[i], zorder=2, label=m)
+                pcol = "p_" + col
+                if pcol in d:
+                    for yi, di, pi in zip(yy, dd, d[pcol].to_numpy()):
+                        if pi < 0.05:
+                            ax.text(di, yi, " *" if di >= 0 else "* ", ha="left" if di >= 0 else "right", va="center",
+                                    fontsize=7, color="#333333", zorder=3)
             ax.grid(axis="y", visible=False)
             ax.tick_params(axis="y", length=0)
             lo, hi = ax.get_xlim()
@@ -56,13 +63,14 @@ def draw(table: pd.DataFrame, models: list, out_dir: str = paths.FIGURES, kinds=
                  ha="left", va="bottom")
     handles, labels = axes[0, 0].get_legend_handles_labels()
     handles.append(plt.Rectangle((0, 0), 1, 1, color="#d9d9d9"))
-    labels.append(f"{BASE} ± seed noise (±{SEED_NOISE['wape']} WMAPE, ±{SEED_NOISE['bias']:.0f}pt |bias|)")
+    labels.append(f"{BASE} ± all-series seed noise (±{SEED_NOISE['wape']} WMAPE, ±{SEED_NOISE['bias']:.0f}pt |bias|)")
     top = axes[0, 0].get_position().y1 + 0.45 * inch
     fig.legend(handles, labels, loc="lower left", bbox_to_anchor=(0.0, top), ncol=3, fontsize=7.3, handlelength=1.2,
                columnspacing=1.2)
     subtitle = subtitle or ("Each bar: a deep model's WMAPE or |bias| minus LightGBM's on the same series and weeks. "
-                            "Left of 0 = better than LightGBM.\nGrey band = single-seed noise. "
-                            "\"Best of 5 ES\" = best of 5 early-stopping settings, picked with hindsight.")
+                            "Left of 0 = better than LightGBM.\n* = p < 0.05 within the segment (paired bootstrap over its "
+                            "series). Grey band = all-series seed noise; smaller segments are noisier.\n\"Best of 5 ES\" = best "
+                            "of 5 early-stopping settings, picked with hindsight. N-HiTS Huber: fit once; Tweedie: refit every origin.")
     style.headline(fig, title, subtitle, y=top + 0.42 * inch)
     for ax in axes.flat:
         ax.tick_params(axis="x", colors=COLORS["muted"])

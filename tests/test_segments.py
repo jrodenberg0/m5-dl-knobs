@@ -97,13 +97,14 @@ def test_draw_segments(res, tmp_path):
     from m5knobs import segments
     from m5knobs.figures import segments as fig
     t = segments.segment_table(res)
-    out = fig.draw(t, list(segments.MODELS), str(tmp_path / "fig"))
-    assert [os.path.basename(p) for p in out] == ["fig4_segments.png", "fig4_segments.svg"]
+    out = fig.draw(t, list(segments.MODELS), "story_segments", str(tmp_path / "fig"))
+    assert [os.path.basename(p) for p in out] == ["story_segments.png", "story_segments.svg"]
     assert Image.open(out[0]).size[0] >= 1200
     svg = open(out[1]).read()
     assert "WMAPE" in svg and "|bias|" in svg and "N-HiTS Huber, best of 5 ES" in svg
     assert f"±{SEED_NOISE['wape']}" in svg
-    again = fig.draw(t, list(segments.MODELS), str(tmp_path / "fig2"))
+    assert "p &lt; 0.05 within the segment" in svg or "p < 0.05 within the segment" in svg
+    again = fig.draw(t, list(segments.MODELS), "story_segments", str(tmp_path / "fig2"))
     assert open(again[1], "rb").read() == open(out[1], "rb").read()
 
 
@@ -128,3 +129,18 @@ def test_report_without_history_skips_segment_section(res, tmp_path):
     out = str(tmp_path / "F.md")
     report.write(results_dir=res, out=out, n_boot=20)
     assert "by segment" not in open(out).read()
+
+
+def test_segment_p_matches_paired_bootstrap(res):
+    from m5knobs import results, scoring, segments
+    a, b = (scoring._series_level(results.load_run(x, res)["ps"]) for x in ("f3_fix", "f4_lgbm"))
+    pw, pb = segments.segment_p(a, b, n_boot=200)
+    assert pw == scoring.paired_bootstrap_p(segments._wape, a, b, n_boot=200)
+    assert pb == scoring.paired_bootstrap_p(segments._abs_bias, a, b, n_boot=200)
+
+
+def test_segment_table_has_p_for_deep_models_only(res):
+    from m5knobs import segments
+    t = segments.segment_table(res, n_boot=50)
+    assert t.loc[t.model == segments.BASE, "p_wape"].isna().all()
+    assert t.loc[t.model != segments.BASE, ["p_wape", "p_abs_bias"]].apply(lambda c: c.between(0, 1)).all().all()

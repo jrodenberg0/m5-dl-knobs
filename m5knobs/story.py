@@ -47,7 +47,7 @@ def compare_line(arm_wrong: str, arm_right: str, labels, results_dir: str = path
             f"WMAPE, ±{SEED_NOISE['bias']:.0f}pt |bias|). " + bias_caveat(w, r, labels, "all series")).strip()
 
 
-def bias_caveat(w: dict, r: dict, labels, scope: str) -> str:
+def bias_caveat(w: dict, r: dict, labels, scope: str, verdict: bool = True) -> str:
     """When the mistaken setting has the smaller |bias|, say so and why it can happen. w, r: dicts with wmape and bias (%).
     Empty otherwise."""
     if abs(w["bias"]) >= abs(r["bias"]):
@@ -59,7 +59,8 @@ def bias_caveat(w: dict, r: dict, labels, scope: str) -> str:
         why = (f"They miss in opposite directions ({labels[0]} {_side(w['bias'])}s by {abs(w['bias']):.1f}%, {labels[1]} "
                f"{_side(r['bias'])}s by {abs(r['bias']):.1f}%), and the {labels[0]} miss is the smaller one.")
     tail = (f" Its week-by-week error is still larger (WMAPE {w['wmape']:.2f} vs {r['wmape']:.2f}): a model can fit worse and "
-            "still land closer in total by chance, which is why the verdict looks at fit and WMAPE, and |bias| separately."
+            "still land closer in total by chance" + (", which is why the verdict looks at fit and WMAPE, and |bias| separately."
+                                                     if verdict else ".")
             if w["wmape"] > r["wmape"] else
             f" Its WMAPE is not worse either ({w['wmape']:.2f} vs {r['wmape']:.2f}).")
     return f"On {scope}, {labels[0]} has the smaller |bias| ({abs(w['bias']):.1f}% vs {abs(r['bias']):.1f}%). {why}{tail}"
@@ -80,17 +81,27 @@ def typical_line(pick: Pick, labels) -> str:
         mixed = " Large per-series changes go both ways, so the all-series result is a net effect, not a uniform one."
     else:
         mixed = ""
-    return (f"{lead} {pick.n_pattern:,} of {pick.n_population:,} series ({pick.pattern_share:.0%}) show the pattern. "
+    base = pick.n_pattern_base or pick.n_population
+    what = pick.pattern_base_text or "series both runs forecast"
+    pattern = pick.text(pick.pattern_text, labels) or "show the pattern"
+    return (f"{lead} {pick.n_pattern:,} of the {base:,} {what} ({pick.pattern_share:.0%}) {pattern}. "
             f"Of the {pick.n_counted:,} series selling more than {HELP_MIN_Y} units, {pick.n_helped:,} got more than "
             f"{HELP_FRAC:.0%} better with {labels[1]} and {pick.n_hurt:,} got worse by as much; on {pick.n_changed:,} of them the "
             f"two forecasts differ by more than {CHANGE_FRAC:.0%}.{mixed}")
 
 
-def example_line(pick: Pick, labels) -> str:
+def example_line(pick: Pick, labels, favours: str = "right") -> str:
+    """The example's own WMAPE and |bias|. favours: the side the rule picks the example for ("right" = labels[1], or
+    "wrong" = labels[0]); says so when the other side is better on either metric on this series."""
+    w, r = (pick.wmape_wrong, pick.absbias_wrong), (pick.wmape_right, pick.absbias_right)
+    o_w, o_b = (w if favours == "right" else r)
+    f_w, f_b = (r if favours == "right" else w)
+    other = labels[0] if favours == "right" else labels[1]
+    notes = ([f"{other} has the smaller |bias|"] if o_b < f_b else []) + ([f"{other} has the lower WMAPE"] if o_w < f_w else [])
+    note = (f" On this series {join_words(notes)}: the example was chosen by the rule above, which is about a different "
+            "measure." if notes else "")
     return (f"On {pick.uid}: {labels[0]} WMAPE {pick.wmape_wrong:.1f}, |bias| {pick.absbias_wrong:.1f}%; "
-            f"{labels[1]} WMAPE {pick.wmape_right:.1f}, |bias| {pick.absbias_right:.1f}%."
-            + (f" On this series {labels[0]} has the smaller |bias|; the example was chosen by the rule above, not by total "
-               "volume." if pick.absbias_wrong < pick.absbias_right else ""))
+            f"{labels[1]} WMAPE {pick.wmape_right:.1f}, |bias| {pick.absbias_right:.1f}%.{note}")
 
 
 def summary_table(results_dir: str = paths.RESULTS) -> pd.DataFrame:
@@ -103,24 +114,39 @@ def summary_table(results_dir: str = paths.RESULTS) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+ALPHA = 0.05  # per-segment paired bootstrap threshold
+
+
 def segment_gaps(table: pd.DataFrame, model: str = DL) -> pd.DataFrame:
-    """One row per segment: model minus LightGBM on WMAPE and |bias| (points), and whether each gap is beyond seed noise."""
+    """One row per segment: model minus LightGBM on WMAPE and |bias| (points), the per-segment paired bootstrap p of each
+    gap, and which side each metric favours at p < ALPHA within the segment ("no clear difference" otherwise)."""
     a = table[table.model == model].set_index(["segment_kind", "segment"])
     b = table[table.model == segments.BASE].set_index(["segment_kind", "segment"])
     g = pd.DataFrame({"vol_share": b["vol_share"], "wmape_dl": a["wape"], "wmape_lgbm": b["wape"], "d_wmape": a["wape"] - b["wape"],
-                      "absbias_dl": a["abs_bias"], "absbias_lgbm": b["abs_bias"], "d_absbias": a["abs_bias"] - b["abs_bias"]})
-    g["wmape_read"] = ["deep learning" if d < -SEED_NOISE["wape"] else "LightGBM" if d > SEED_NOISE["wape"] else "tie"
-                       for d in g["d_wmape"]]
-    g["bias_read"] = ["deep learning" if d < -SEED_NOISE["bias"] else "LightGBM" if d > SEED_NOISE["bias"] else "tie"
-                      for d in g["d_absbias"]]
+                      "p_wmape": a["p_wape"], "absbias_dl": a["abs_bias"], "absbias_lgbm": b["abs_bias"],
+                      "d_absbias": a["abs_bias"] - b["abs_bias"], "p_absbias": a["p_abs_bias"]})
+    read = lambda d, p: "deep learning" if p < ALPHA and d < 0 else "LightGBM" if p < ALPHA and d > 0 else "no clear difference"  # noqa: E731
+    g["wmape_read"] = [read(d, p) for d, p in zip(g["d_wmape"], g["p_wmape"])]
+    g["bias_read"] = [read(d, p) for d, p in zip(g["d_absbias"], g["p_absbias"])]
     return g.reset_index()
 
 
-def lightgbm_lead(table: pd.DataFrame, kinds=("volume quartile", "zero weeks", "department"), model: str = DL) -> dict:
-    """The series segment (not origin) where LightGBM's WMAPE lead over the model is largest."""
+SERIES_KINDS = ("volume quartile", "zero weeks", "department")
+
+
+def lightgbm_lead(table: pd.DataFrame, kinds=SERIES_KINDS, model: str = DL):
+    """The series segment (not origin) where LightGBM's WMAPE lead over the model is largest among leads with p < ALPHA
+    within the segment; None if there is none."""
     g = segment_gaps(table, model)
-    r = g[g.segment_kind.isin(kinds)].sort_values("d_wmape", ascending=False).iloc[0]
-    return r.to_dict()
+    g = g[g.segment_kind.isin(kinds) & (g.wmape_read == "LightGBM")]
+    return None if g.empty else g.sort_values("d_wmape", ascending=False).iloc[0].to_dict()
+
+
+def dl_lead(table: pd.DataFrame, kinds=SERIES_KINDS, model: str = DL):
+    """Mirror of lightgbm_lead: the series segment where the model's WMAPE lead over LightGBM is largest, p < ALPHA."""
+    g = segment_gaps(table, model)
+    g = g[g.segment_kind.isin(kinds) & (g.wmape_read == "deep learning")]
+    return None if g.empty else g.sort_values("d_wmape").iloc[0].to_dict()
 
 
 def _name(r) -> str:
@@ -129,20 +155,26 @@ def _name(r) -> str:
 
 
 def where_bullets(table: pd.DataFrame, model: str = DL) -> list:
-    """Markdown bullets: the segments where the model beats or loses to LightGBM beyond seed noise, on WMAPE and on |bias|."""
+    """Markdown bullets: the segments where the model beats or loses to LightGBM on WMAPE and on |bias|, at p < ALPHA within
+    the segment (paired bootstrap over its series; seed noise is not in that p)."""
     g = segment_gaps(table, model)
     out = []
-    for col, read, metric, unit, noise in (("d_wmape", "wmape_read", "WMAPE", "", SEED_NOISE["wape"]),
-                                           ("d_absbias", "bias_read", "|bias|", "pt", SEED_NOISE["bias"])):
+    for col, read, metric, unit in (("d_wmape", "wmape_read", "WMAPE", ""), ("d_absbias", "bias_read", "|bias|", "pt")):
         for side, verb in (("deep learning", f"{model} beats LightGBM"), ("LightGBM", "LightGBM beats " + model)):
             s = g[g[read] == side]
             if s.empty:
-                out.append(f"{verb} on {metric} beyond seed noise (±{noise:g}{unit}): in no segment.")
+                out.append(f"{verb} on {metric} at p < {ALPHA} within the segment: in no segment.")
                 continue
             items = [f"{_name(r)}, {r[col]:+.1f}{unit}" for _, r in s.sort_values(col, key=abs, ascending=False).iterrows()]
-            out.append(f"{verb} on {metric} beyond seed noise (±{noise:g}{unit}): {join_words(items)}.")
-    ties = g[(g.wmape_read == "tie")]
-    out.append(f"WMAPE within seed noise in {len(ties)} of {len(g)} segments: {join_words(_name(r) for _, r in ties.iterrows())}.")
+            out.append(f"{verb} on {metric} at p < {ALPHA} within the segment: {join_words(items)}.")
+    ties = g[g.wmape_read == "no clear difference"]
+    out.append(f"No clear WMAPE difference (p ≥ {ALPHA}) in {len(ties)} of {len(g)} segments: "
+               f"{join_words(_name(r) for _, r in ties.iterrows())}.")
+    small = g[(g.wmape_read != "no clear difference") & (g.d_wmape.abs() <= SEED_NOISE["wape"])]
+    if len(small):
+        out.append(f"Of the clear WMAPE differences, {join_words(_name(r) for _, r in small.iterrows())} "
+                   f"{'is' if len(small) == 1 else 'are'} within the all-series seed-noise bar (±{SEED_NOISE['wape']}); the "
+                   "segment p covers series-to-series variation, not seed-to-seed, so treat those as likely ties.")
     return out
 
 
@@ -159,12 +191,13 @@ def group_metrics(t: pd.DataFrame, mask) -> dict:
 
 def group_line(t: pd.DataFrame, mask, labels, name: str) -> str:
     g = group_metrics(t, mask)
-    return (f"{name}: {g['n']:,} series, {g['vol_share']:.0%} of volume. {labels[0]} WMAPE {g['wmape_wrong']:.2f}, |bias| "
+    return (f"{name}, counting only the series and weeks both models forecast (so the numbers differ slightly from the "
+            f"segment table): {g['n']:,} series, {g['vol_share']:.0%} of volume. {labels[0]} WMAPE {g['wmape_wrong']:.2f}, |bias| "
             f"{abs(g['bias_wrong']):.1f}% ({_side(g['bias_wrong'])}); {labels[1]} WMAPE {g['wmape_right']:.2f}, |bias| "
             f"{abs(g['bias_right']):.1f}% ({_side(g['bias_right'])}). Series by series it is mixed: {labels[1]} has the lower "
             f"error on {g['share_right_better']:.0%} of them. " + _split(g, labels)
             + bias_caveat(dict(wmape=g["wmape_wrong"], bias=g["bias_wrong"]), dict(wmape=g["wmape_right"], bias=g["bias_right"]),
-                          labels, f"these {g['n']:,} series")).strip()
+                          labels, f"these {g['n']:,} series", verdict=False)).strip()
 
 
 def _split(g: dict, labels) -> str:
@@ -224,14 +257,46 @@ def concentration(t: pd.DataFrame, mask, k: int = 10) -> dict:
 
 
 def val_spikes(results_dir: str = paths.RESULTS) -> dict:
-    """Per stressor and run (clip off / AutoClip): largest validation loss divided by the best one, from the training trace."""
+    """Per stressor and run (off / on): largest validation loss divided by the best one, and whether the run recovered
+    (did not diverge under stress.diverged: last validation loss at most 2x the best, no crash)."""
     from m5knobs.experiments import STRESSORS
     from m5knobs.figures import stress
     out = {}
     for k in STRESSORS:
         out[k] = {}
         for side, arm in (("off", f"st_{k}_noclip"), ("on", f"st_{k}_clip")):
-            tr = stress._load(arm, results_dir).get("trace")
+            run = stress._load(arm, results_dir)
+            tr = run.get("trace")
             v = tr["val_loss"][np.isfinite(tr["val_loss"])] if tr is not None else pd.Series(dtype=float)
             out[k][side] = float(v.max() / v.min()) if len(v) else float("nan")
+            out[k][side + "_recovered"] = not stress.diverged(run)
     return out
+
+
+SPIKE = 2.0  # a validation-loss peak above 2x the run's best counts as a spike
+
+
+def spike_text(sp: dict, names: dict) -> tuple:
+    """(sentence naming the runs whose validation loss spiked above SPIKE x best and whether they recovered,
+    sentence on what that means for the clipping claim, or '' when no AutoClip run spiked more than its clip-off pair)."""
+    parts, on_worse = [], []
+    for k, v in sp.items():
+        spiked = [(side, lab) for side, lab in (("off", "clip off"), ("on", "AutoClip")) if v[side] > SPIKE]
+        if not spiked:
+            parts.append(f"{names[k]}: no spike in either run")
+            continue
+        parts.append(f"{names[k]}: " + join_words(
+            f"the {lab} run spiked to {v[side]:,.1f}× its best and " + ("recovered" if v[side + '_recovered'] else "did not recover")
+            for side, lab in spiked))
+        if v["on"] > SPIKE and v["on"] > v["off"]:
+            on_worse.append(names[k])
+    first = f"Validation-loss spikes (peak above {SPIKE:g}× the run's best): " + "; ".join(parts) + "."
+    second = ""
+    if on_worse:
+        second = (f"The larger spikes were in the AutoClip runs ({join_words(on_worse)}), not the unclipped ones. So the "
+                  "stress test does not show clipping preventing instability; clipping's case here rests on the recipe "
+                  "verdict and on where each run ended (WMAPE), not on calmer training.")
+    return first, second
+
+
+segment_name = _name  # public name for the notebook: "volume Q4 fastest (69% of volume)"

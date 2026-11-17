@@ -84,14 +84,18 @@ def _metrics(ax, heading, labels, totals, wmape, absbias):
 
 
 def _footer(pick: examples.Pick, labels) -> str:
-    rule = textwrap.fill(f"Example chosen by rule: {pick.rule}.", 160)
+    rule = textwrap.fill(f"Example chosen by rule: {pick.text(pick.rule, labels)}.", 160)
+    base = pick.n_pattern_base or pick.n_population
+    what = pick.pattern_base_text or "series both forecasts cover"
+    pattern = textwrap.fill(f"{pick.uid} is rank {pick.rank} of {pick.n_candidates:,} candidates. {pick.n_pattern:,} of "
+                            f"{base:,} {what} ({pick.pattern_share:.0%}) "
+                            f"{pick.text(pick.pattern_text, labels) or 'show this pattern'}.", 160)
     return "\n".join([
         f"Shaded = gap between {labels[0]} and {labels[1]}. Dotted lines = forecast origins. "
         "WMAPE = sum of absolute errors / sum of actual sales; |bias| = |total forecast / total actual - 1|.",
         rule,
-        f"{pick.uid} is rank {pick.rank} of {pick.n_candidates:,} candidates. "
-        f"{pick.n_pattern:,} of {pick.n_population:,} series ({pick.pattern_share:.0%}) show this pattern.",
-        f"Over all {pick.n_counted:,} series with >{examples.HELP_MIN_Y} units: {pick.n_helped:,} improved by "
+        pattern,
+        f"Of the {pick.n_counted:,} series with >{examples.HELP_MIN_Y} units: {pick.n_helped:,} improved with {labels[1]} by "
         f">{examples.HELP_FRAC:.0%} of their error, {pick.n_hurt:,} got worse by as much.",
     ])
 

@@ -43,19 +43,24 @@ def _order(kind: str, segs) -> list:
     return [s for s in fixed if s in set(segs)] if fixed else sorted(segs)
 
 
-def segment_table(results_dir: str = paths.RESULTS, arms: dict = None) -> pd.DataFrame:
-    """Long format: segment_kind, segment, n_series, vol_share (of all actual volume), model, wape, bias, abs_bias (%).
+def segment_table(results_dir: str = paths.RESULTS, arms: dict = None, n_boot: int = 2000) -> pd.DataFrame:
+    """Long format: segment_kind, segment, n_series, vol_share (of all actual volume), model, wape, bias, abs_bias (%),
+    p_wape, p_abs_bias.
 
     Scored from each run's per_series.parquet (missing forecasts count as 0, as in every summary). Segments with no
-    actual volume (WMAPE undefined) are dropped.
+    actual volume (WMAPE undefined) are dropped. p_wape / p_abs_bias: paired bootstrap over the segment's series of the
+    model's WMAPE / |bias| minus LightGBM's (NaN for LightGBM itself, or with n_boot=0).
     """
     arms = arms or MODELS
     results.require(list(arms.values()), results_dir)
     seg = series_segments(results_dir)
-    rows = []
+    loaded = {}
     for model, arm in arms.items():
         ps = results.load_run(arm, results_dir)["ps"].merge(seg, on="unique_id", how="left")
         ps["origin"] = pd.to_datetime(ps["cutoff"]).dt.strftime("%Y-%m-%d")
+        loaded[model] = ps
+    rows = []
+    for model, ps in loaded.items():
         total = ps["y_sum"].sum()
         for kind in KINDS:
             g = ps.groupby(kind)
@@ -64,9 +69,32 @@ def segment_table(results_dir: str = paths.RESULTS, arms: dict = None) -> pd.Dat
             for name in _order(kind, s.index):
                 r = s.loc[name]
                 bias = 100 * (r["yhat_sum"] / r["y_sum"] - 1)
+                pw = pb = np.nan
+                if n_boot and model != BASE and BASE in loaded:
+                    a, b = (_series_level(d[d[kind] == name]) for d in (ps, loaded[BASE]))
+                    pw, pb = segment_p(a, b, n_boot)
                 rows.append(dict(segment_kind=kind, segment=name, n_series=int(r["n_series"]), vol_share=r["y_sum"] / total,
-                                 model=model, wape=100 * r["abs_err"] / r["y_sum"], bias=bias, abs_bias=abs(bias)))
+                                 model=model, wape=100 * r["abs_err"] / r["y_sum"], bias=bias, abs_bias=abs(bias),
+                                 p_wape=pw, p_abs_bias=pb))
     return pd.DataFrame(rows)
+
+
+def segment_p(a: pd.DataFrame, b: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> tuple:
+    """Paired bootstrap p of (WMAPE, |bias|) of a minus b over series: the same resampling and p as
+    scoring.paired_bootstrap_p (same seed, same draws), vectorized for both statistics at once."""
+    a, b = a.set_index("unique_id"), b.set_index("unique_id")
+    ids = a.index.intersection(b.index)
+    A = a.loc[ids, ["abs_err", "y_sum", "yhat_sum"]].to_numpy(float)
+    B = b.loc[ids, ["abs_err", "y_sum", "yhat_sum"]].to_numpy(float)
+    rng = np.random.default_rng(seed)
+    dw, db = np.empty(n_boot), np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, len(ids), len(ids))
+        sa, sb = A[idx].sum(0), B[idx].sum(0)
+        dw[i] = 100 * sa[0] / sa[1] - 100 * sb[0] / sb[1]
+        db[i] = 100 * abs(sa[2] / sa[1] - 1) - 100 * abs(sb[2] / sb[1] - 1)
+    p = lambda d: float(min(1.0, 2 * min(np.mean(d <= 0), np.mean(d >= 0))))  # noqa: E731
+    return p(dw), p(db)
 
 
 def _wape(d):

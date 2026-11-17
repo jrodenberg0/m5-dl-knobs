@@ -1,8 +1,8 @@
 # The knobs that make deep learning fit supply-chain data
 
 Which training settings make a deep model (N-HiTS in stock [NeuralForecast](https://github.com/Nixtla/neuralforecast)) fit
-intermittent weekly retail demand, and how much each one matters, tested on all 30,490 M5 item-store series, and where it beats a LightGBM baseline. One notebook walks
-through the evidence; everything is reproducible from the public M5 data. This repo is self-contained; it started
+intermittent weekly retail demand, how much each one matters, and where the result beats a LightGBM baseline, tested on
+all 30,490 M5 item-store series. One notebook walks through the evidence; everything is reproducible from the public M5 data. This repo is self-contained; it started
 as the code for the article *Making Deep Learning Sing; In Supply Chain Forecasting*.
 
 ## The recipe
@@ -29,7 +29,8 @@ Setup: weekly data, 13-week horizon, 3 rolling origins, single seed (1).
    figure, the computed verdict with WMAPE and |bias| for both settings, and what to set.
 4. **Clipping under stress**: three stressors with clipping off and on.
 5. **Deep learning vs LightGBM**: why stock Tweedie loses (its floor of about one unit a week), where N-HiTS with Huber loss
-   wins (total volume, mostly on fast, steady sellers), and where LightGBM still wins.
+   wins (total volume across most segments, and WMAPE in the segment where its lead is clearest), and where LightGBM still
+   wins. Segment differences carry a paired bootstrap p within the segment.
 6. **Where to use deep learning on weekly retail**: every model and setting in one table, computed takeaways by segment,
    four practitioner claims with their verdicts, and the caveats. Writes `FINDINGS.md`.
 
@@ -48,6 +49,7 @@ notebook says how typical it is. The figures, in `figures/` as PNG and SVG:
 | `story_segments` | each deep model minus LightGBM, WMAPE and \|bias\|, by volume quartile and share of zero weeks |
 | `story_segments_detail` | the same by department and by forecast origin |
 | `story_dl_wins` | where N-HiTS Huber wins: total volume on fast, steady sellers |
+| `story_dl_wins_wmape` | where N-HiTS Huber wins on WMAPE: the segment with its clearest WMAPE lead (only if one has p < 0.05) |
 | `story_lightgbm_wins` | where LightGBM wins: the segment with its largest WMAPE lead |
 
 ## What `m5knobs/model.py` adds to stock NeuralForecast
@@ -65,7 +67,7 @@ notebook says how typical it is. The figures, in `figures/` as PNG and SVG:
   the whole Python process* as soon as it is imported, so validation keeps all series.
 - **Short-series padding**: series with ≤ 13 weeks are left-padded with zeros so the validation split exists.
 
-## Run the notebooks (no training)
+## Run the notebook (no training)
 
 ```bash
 git clone https://github.com/jrodenberg0/m5-dl-knobs.git && cd m5-dl-knobs
@@ -137,7 +139,7 @@ scripts/
   toy_clip.py               the 2-weight toy fit -> results/toy_* (reported in FINDINGS.md only)
 m5knobs/
   paths.py                  repo locations; RESULTS_DIR, FIG_DIR, FINDINGS_PATH, M5_WEEKLY override them
-  data.py                   the weekly panel, forecast cutoffs, example series
+  data.py                   the weekly panel, forecast cutoffs, the runner's two reference series (examples.py picks the figures')
   model.py                  Knobs (the recipe) and the additions to stock NeuralForecast
   experiments.py            every arm and the runner that trains them
   scoring.py                per-series errors, training traces, the verdict rule

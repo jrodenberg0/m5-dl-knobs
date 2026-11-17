@@ -188,7 +188,9 @@ def test_floor_picks_mostly_zero_series_forecast_at_floor():
     ])
     p = examples.pick_floor(t)
     assert p.uid == "pick" and p.n_candidates == 1
-    assert (p.n_pattern, p.n_population) == (4, 12)  # pick, above_floor, no_sales, selling: >=50% zeros, >=0.9 a week
+    # pattern over the 5 mostly-zero series: forecast >= 0.9 a week while sales < 0.5 a week (pick, above_floor, no_sales)
+    assert (p.n_pattern, p.n_pattern_base, p.n_population) == (3, 5, 12)
+    assert p.pattern_share == 3 / 5 and "50% zero weeks" in p.pattern_base_text
 
 
 def test_typical_is_median_rel_change():
@@ -296,8 +298,14 @@ def test_pair_table_counts_near_zero_weeks(tmp_path):
 
 def test_wins_segment_rules_need_full_history():
     rows = _filler(6, mean_hist=1.0) + [
-        _row("new_item", mean_hist=50.0, err_wrong=10.0, err_right=500.0, n_hist=12),
-        _row("stockout", mean_hist=50.0, err_wrong=10.0, err_right=400.0, max_zero_run_hist=9),
-        _row("old_item", mean_hist=50.0, err_wrong=10.0, err_right=100.0, n_hist=52)]
+        _row("new_item", mean_hist=10.0, err_wrong=10.0, err_right=500.0, n_hist=12),
+        _row("stockout", mean_hist=10.0, err_wrong=10.0, err_right=400.0, max_zero_run_hist=9),
+        _row("level_shift", mean_hist=50.0, err_wrong=10.0, err_right=300.0),
+        _row("old_item", mean_hist=10.0, err_wrong=10.0, err_right=100.0, n_hist=52),
+        _row("dl_old", mean_hist=10.0, err_wrong=100.0, err_right=10.0, n_hist=52),
+        _row("dl_new", mean_hist=10.0, err_wrong=900.0, err_right=10.0, n_hist=20)]
     t = _table(rows)
-    assert examples.pick_wrong_wins_segment(t, pd.Series(True, index=t.index)).uid == "old_item"
+    everyone = pd.Series(True, index=t.index)
+    p = examples.pick_wrong_wins_segment(t, everyone)
+    assert p.uid == "old_item" and p.text(p.pattern_text, ("LightGBM", "N-HiTS")) == "have the lower error with LightGBM"
+    assert examples.pick_right_wins_segment(t, everyone).uid == "dl_old"

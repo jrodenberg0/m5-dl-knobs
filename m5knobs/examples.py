@@ -47,6 +47,13 @@ class Pick:
     wmape_right: float
     absbias_wrong: float
     absbias_right: float
+    pattern_text: str = ""        # what "show the pattern" means, with {wrong} / {right} placeholders
+    n_pattern_base: int = 0       # series the pattern share is over (default: the population)
+    pattern_base_text: str = ""   # name of that base when it is not the population
+
+    def text(self, s: str, labels) -> str:
+        """s with {wrong} / {right} replaced by the two forecasts' labels."""
+        return s.replace("{wrong}", labels[0]).replace("{right}", labels[1])
 
 
 def history_features(hist: pd.DataFrame) -> pd.DataFrame:
@@ -147,10 +154,21 @@ def pair_table(results_dir: str, arm_wrong: str, arm_right: str) -> pd.DataFrame
 
 REGULAR = (f"series selling at least the median weekly volume in history, with no run of {LONG_GAP}+ zero weeks "
            "(off the shelf or out of stock)")
+STEADY = (f"series selling at least the median weekly volume in history, with no run of {STOCKOUT}+ zero weeks and no week "
+          f"under {LOW:.0%} of the series' median weekly sales (history or forecast weeks), at least {FULL_HIST} weeks "
+          f"of history, and forecast-week sales within {LEVEL[0]:.2f}-{LEVEL[1]:.1f}x the history level (no level shift)")
+# Rule and pattern texts name the two forecasts as {wrong} and {right}; Pick.text() fills in the labels.
 
 
 def _regular(t: pd.DataFrame) -> pd.Series:
     return (t["mean_hist"] >= t["mean_hist"].median()) & (t["max_zero_run_hist"] < LONG_GAP)
+
+
+def _steady(t: pd.DataFrame) -> pd.Series:
+    return ((t["mean_hist"] >= t["mean_hist"].median()) & (t["max_zero_run_hist"] < STOCKOUT)
+            & (t["max_zero_run_fc"] < STOCKOUT) & (t["low_weeks_hist"] == 0) & (t["low_weeks_fc"] == 0)
+            & (t["n_hist"] >= FULL_HIST)
+            & ((t["y"] / t["weeks"]) / t["mean_hist"].where(t["mean_hist"] > 0)).between(*LEVEL))
 
 
 def _intermittent(t: pd.DataFrame) -> pd.Series:
@@ -172,22 +190,26 @@ def _pct(f, y):
     return float(100 * f / y) if y > 0 else float("nan")
 
 
-def _make(t, row, rule, rank, n_cand, pattern, pop) -> Pick:
-    """Population counts: helped/hurt/changed over pop ∩ y > HELP_MIN_Y; pattern share over pop."""
+def _make(t, row, rule, rank, n_cand, pattern, pop, pattern_text, pattern_base=None, base_text="") -> Pick:
+    """Population counts: helped/hurt/changed over pop and y > HELP_MIN_Y; pattern share over pattern_base (default pop)."""
     p = t[pop]
     big = p[p["y"] > HELP_MIN_Y]
-    pat = int((pattern & pop).fillna(False).sum())
+    base = pop if pattern_base is None else (_mask(t, pattern_base) & pop)
+    base_text = base_text or ("" if pop.all() else "series in the segment")
+    pat = int((pattern & base).fillna(False).sum())
+    nb = int(base.sum())
     r = t.loc[row]
     return Pick(uid=r["unique_id"], rule=rule, rank=int(rank), n_candidates=int(n_cand), n_pattern=pat,
-                pattern_share=pat / len(p) if len(p) else float("nan"), n_population=len(p), n_counted=len(big),
+                pattern_share=pat / nb if nb else float("nan"), n_population=len(p), n_counted=len(big),
                 n_helped=int((big["gain"] > HELP_FRAC * big["err_wrong"]).sum()),
                 n_hurt=int((-big["gain"] > HELP_FRAC * big["err_wrong"]).sum()),
                 n_changed=int((big["rel_change"] > CHANGE_FRAC).sum()),
                 wmape_wrong=_pct(r["err_wrong"], r["y"]), wmape_right=_pct(r["err_right"], r["y"]),
-                absbias_wrong=abs(_pct(r["f_wrong"], r["y"]) - 100), absbias_right=abs(_pct(r["f_right"], r["y"]) - 100))
+                absbias_wrong=abs(_pct(r["f_wrong"], r["y"]) - 100), absbias_right=abs(_pct(r["f_right"], r["y"]) - 100),
+                pattern_text=pattern_text, n_pattern_base=nb, pattern_base_text=base_text)
 
 
-def _max(t, cand, score, rule, pattern, pop=None, tiebreak=None) -> Pick:
+def _max(t, cand, score, rule, pattern, pattern_text, pop=None, tiebreak=None, pattern_base=None, base_text="") -> Pick:
     """Candidate with the largest score (then tiebreak, then unique_id); typical series if none has score > 0."""
     pop = _mask(t, pop)
     cand = cand.fillna(False).astype(bool) & pop
@@ -197,7 +219,7 @@ def _max(t, cand, score, rule, pattern, pop=None, tiebreak=None) -> Pick:
         p = pick_typical(t, pop)
         p.rule = f"no series matched {rule}; typical series instead: {p.rule}"
         return p
-    return _make(t, c.index[0], rule, 1, len(c), pattern, pop)
+    return _make(t, c.index[0], rule, 1, len(c), pattern, pop, pattern_text, pattern_base, base_text)
 
 
 def pick_typical(t: pd.DataFrame, pop=None) -> Pick:
@@ -209,15 +231,17 @@ def pick_typical(t: pd.DataFrame, pop=None) -> Pick:
     reg = _regular(t) & pop
     c = t[reg if reg.any() else pop].sort_values(["rel_change", "unique_id"], kind="mergesort")
     i = (len(c) - 1) // 2
-    return _make(t, c.index[i], f"median forecast change between the two settings among {REGULAR}", i + 1, len(c),
-                 t["rel_change"] <= CHANGE_FRAC, pop)
+    return _make(t, c.index[i], f"median forecast change between {{wrong}} and {{right}} among {REGULAR}", i + 1, len(c),
+                 t["rel_change"] <= CHANGE_FRAC, pop,
+                 f"have {{wrong}} and {{right}} forecasts within {CHANGE_FRAC:.0%} of each other (no clear change)")
 
 
 def pick_overforecast_fix(t: pd.DataFrame) -> Pick:
     """Clipping: largest error reduction where the mistaken arm forecasts above both the fix and the actuals."""
     pattern = (t["f_wrong"] > t["f_right"]) & (t["f_wrong"] > t["y"])
-    return _max(t, _regular(t) & pattern, t["gain"], "largest error reduction where the mistaken setting over-forecasts "
-                f"(above the fix and above actual sales), among {REGULAR}", pattern)
+    return _max(t, _regular(t) & pattern, t["gain"], "largest error reduction by {right} where {wrong} over-forecasts "
+                f"(above {{right}} and above actual sales), among {REGULAR}", pattern,
+                "have the {wrong} total above both the {right} total and actual sales")
 
 
 def pick_seasonal_gain(t: pd.DataFrame) -> Pick:
@@ -231,10 +255,12 @@ def pick_seasonal_gain(t: pd.DataFrame) -> Pick:
     cand = (_regular(t) & pattern & (t["zero_share_hist"] < 0.05) & (t["zero_share_fc"] == 0) & (t["zeros_y52"] == 0)
             & (t["gain"] > 0) & (t["amp_right"] >= MOVES))
     return _max(t, cand, t["corr52_right"] - t["corr52_wrong"],
-                "largest gain in how closely the forecast follows last year's sales on the same weeks (fix minus "
-                "mistaken setting), among series whose sales repeat last year's (top quartile), without stock-outs, "
-                f"where the fix lowers the error and its forecast swings at least {MOVES:.0%} as much as actual sales, "
-                f"among {REGULAR}", pattern)
+                "largest gain in how closely the forecast follows last year's sales on the same weeks ({right} minus "
+                "{wrong}), among series whose sales repeat last year's (top quartile), without stock-outs, "
+                f"where {{right}} lowers the error and its forecast swings at least {MOVES:.0%} as much as actual sales, "
+                f"among {REGULAR}", pattern,
+                "repeat last year's sales (top quartile) and have the {right} forecast that follows last year's sales more "
+                "closely than {wrong}")
 
 
 def pick_flatter_wrong(t: pd.DataFrame) -> Pick:
@@ -247,8 +273,9 @@ def pick_flatter_wrong(t: pd.DataFrame) -> Pick:
     cand = (_regular(t) & pattern & (t["max_zero_run_hist"] < STOCKOUT) & (t["max_zero_run_fc"] < STOCKOUT)
             & (t["gain"] > 0))
     return _max(t, cand, t["shape_gain"], "largest error reduction from the shape of the forecast (both forecasts "
-                f"rescaled to actual sales) where the mistaken setting's forecast swings at most {FLATTER:.0%} as much "
-                f"as the fix's, among {REGULAR} and no run of {STOCKOUT}+ zero weeks", pattern)
+                f"rescaled to actual sales) where {{wrong}} swings at most {FLATTER:.0%} as much as {{right}}, among "
+                f"{REGULAR} and no run of {STOCKOUT}+ zero weeks", pattern,
+                f"have the {{wrong}} forecast swinging at most {FLATTER:.0%} as much as the {{right}} forecast")
 
 
 def pick_underforecast_wrong(t: pd.DataFrame) -> Pick:
@@ -263,29 +290,36 @@ def pick_underforecast_wrong(t: pd.DataFrame) -> Pick:
             & (t["origins_wrong_below_right"] == t["origins"]) & (t["origins_wrong_below_y"] == t["origins"]))
     closed = np.minimum(t["f_right"], t["y"]) - t["f_wrong"]
     return _max(t, cand, closed / (t["y"] - t["f_wrong"]),
-                "largest share of the mistaken setting's under-forecast closed by the fix, among series with at least "
+                "largest share of the {wrong} under-forecast closed by {right}, among series with at least "
                 f"30% zero weeks in history and in the forecast weeks (runs under {SHORT_GAP} weeks), selling over "
-                f"{HELP_MIN_Y} units but below the top volume quartile, where the mistaken setting is below actual "
-                "sales and below the fix at every origin", pattern, tiebreak=closed)
+                f"{HELP_MIN_Y} units but below the top volume quartile, where {{wrong}} is below actual sales and below "
+                "{right} at every origin", pattern,
+                "are intermittent (at least 30% zero weeks) and have the {wrong} total below the {right} total",
+                tiebreak=closed)
 
 
 def pick_floor(t: pd.DataFrame) -> Pick:
     """Tweedie floor: mostly-zero series still on sale, forecast at about 1 a week; largest error cut by the fix.
 
-    Pattern: >= 50% zero weeks in history and the mistaken setting forecasts 0.9 a week or more.
+    Pattern (over the mostly-zero series, >= 50% zero weeks in history): the mistaken setting forecasts 0.9 a week or
+    more while actual sales average under 0.5 a week, i.e. the floor bites.
     """
     per_week_f, per_week_y = t["f_wrong"] / t["weeks"], t["y"] / t["weeks"]
-    pattern = (t["zero_share_hist"] >= 0.5) & (per_week_f >= 0.9)
-    cand = pattern & (per_week_y < 0.5) & (t["y"] >= 1) & (per_week_f <= 1.2)
-    return _max(t, cand, t["gain"], "largest error reduction by the fix among series with at least 50% zero weeks in "
-                "history that sold under 0.5 a week (but sold) in the forecast weeks while the mistaken setting "
-                "forecast 0.9-1.2 a week", pattern)
+    mostly_zero = t["zero_share_hist"] >= 0.5
+    pattern = mostly_zero & (per_week_f >= 0.9) & (per_week_y < 0.5)
+    cand = pattern & (t["y"] >= 1) & (per_week_f <= 1.2)
+    return _max(t, cand, t["gain"], "largest error reduction by {right} among series with at least 50% zero weeks in "
+                "history that sold under 0.5 a week (but sold) in the forecast weeks while {wrong} forecast 0.9-1.2 a "
+                "week", pattern, "have the {wrong} forecast at 0.9 a week or more while actual sales average under 0.5 "
+                "a week", pattern_base=mostly_zero, base_text="series with at least 50% zero weeks")
 
 
 def pick_right_wins_segment(t: pd.DataFrame, mask) -> Pick:
-    """Largest error advantage of the second arm inside the segment (population = the segment)."""
-    return _max(t, _regular(t), t["gain"], f"largest error advantage of the second setting in the segment, among "
-                f"{REGULAR}", t["gain"] > 0, pop=mask)
+    """Largest error advantage of the second arm inside the segment (population = the segment), among steady,
+    long-history series."""
+    wm = t["gain"] / t["y"].where(t["y"] > 0)
+    return _max(t, _steady(t), wm, f"largest WMAPE advantage (points on the series) of {{right}} over {{wrong}} in the segment, "
+                f"among {STEADY}", t["gain"] > 0, "have the lower error with {right}", pop=mask, tiebreak=t["gain"])
 
 
 def pick_right_closer_total(t: pd.DataFrame, mask) -> Pick:
@@ -293,28 +327,21 @@ def pick_right_closer_total(t: pd.DataFrame, mask) -> Pick:
     arm's total lands within CLOSE of actual sales and cuts the first arm's miss on total volume the most, in points of the
     series' actual total (|f_wrong - y| - |f_right - y|) / y.
 
-    Steady: no run of STOCKOUT+ zero weeks and no week under LOW x median sales, in history or forecast weeks, at least
-    FULL_HIST weeks of history, and forecast-week sales within LEVEL of the history level (no level shift)."""
+    Steady: _steady (no stock-outs, full history, no level shift)."""
     cut = ((t["f_wrong"] - t["y"]).abs() - (t["f_right"] - t["y"]).abs()) / t["y"].where(t["y"] > 0)
-    level = (t["y"] / t["weeks"]) / t["mean_hist"].where(t["mean_hist"] > 0)
-    cand = (_regular(t) & (t["max_zero_run_hist"] < STOCKOUT) & (t["max_zero_run_fc"] < STOCKOUT)
-            & (t["low_weeks_hist"] == 0) & (t["low_weeks_fc"] == 0) & (t["n_hist"] >= FULL_HIST)
-            & level.between(*LEVEL) & ((t["f_right"] - t["y"]).abs() <= CLOSE * t["y"]))
+    cand = _steady(t) & ((t["f_right"] - t["y"]).abs() <= CLOSE * t["y"])
     return _max(t, cand, cut, "largest cut in the miss on total volume (|forecast total - actual total| as a share of actual) "
-                f"by the second setting in the segment, where its total is within {CLOSE:.0%} of actual, among {REGULAR}, with "
-                f"no run of {STOCKOUT}+ zero weeks and no week under {LOW:.0%} of the series' median weekly sales (history or "
-                f"forecast weeks), at least {FULL_HIST} weeks of history, and forecast-week sales within "
-                f"{LEVEL[0]:.2f}-{LEVEL[1]:.1f}x the history level", cut > 0, pop=mask)
+                f"by {{right}} compared with {{wrong}} in the segment, where the {{right}} total is within {CLOSE:.0%} of "
+                f"actual, among {STEADY}",
+                cut > 0, "have the {right} total closer to actual sales than the {wrong} total", pop=mask)
 
 
 def pick_wrong_wins_segment(t: pd.DataFrame, mask) -> Pick:
-    """Largest error advantage of the first arm inside the segment (population = the segment), among steady, long-history
-    series (as in pick_right_closer_total, without the level and closeness conditions)."""
-    cand = (_regular(t) & (t["max_zero_run_hist"] < STOCKOUT) & (t["max_zero_run_fc"] < STOCKOUT)
-            & (t["low_weeks_hist"] == 0) & (t["low_weeks_fc"] == 0) & (t["n_hist"] >= FULL_HIST))
-    return _max(t, cand, -t["gain"], "largest error advantage of the first setting in the segment, among "
-                f"{REGULAR}, with no run of {STOCKOUT}+ zero weeks and no week under {LOW:.0%} of the series' median weekly "
-                f"sales (history or forecast weeks) and at least {FULL_HIST} weeks of history", t["gain"] < 0, pop=mask)
+    """Largest error advantage of the first arm inside the segment (population = the segment), among steady,
+    long-history series."""
+    wm = -t["gain"] / t["y"].where(t["y"] > 0)
+    return _max(t, _steady(t), wm, f"largest WMAPE advantage (points on the series) of {{wrong}} over {{right}} in the segment, "
+                f"among {STEADY}", t["gain"] < 0, "have the lower error with {wrong}", pop=mask, tiebreak=-t["gain"])
 
 
 def bias_summary(t: pd.DataFrame, mask=None) -> dict:

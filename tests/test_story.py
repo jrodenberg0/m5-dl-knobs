@@ -25,7 +25,8 @@ def test_typical_line_top_case_and_typical(res):
         assert "rule's top case (rank 1 of" in story.typical_line(top, ("a", "b"))
     typ = examples.pick_typical(t)
     line = story.typical_line(typ, ("a", "b"))
-    assert "typical series, not an extreme one" in line and f"{typ.n_pattern:,} of {typ.n_population:,}" in line
+    assert "typical series, not an extreme one" in line and f"{typ.n_pattern:,} of the {typ.n_population:,} series both runs forecast" in line
+    assert "within 10% of each other" in line
 
 
 def test_summary_table_has_every_setting(res):
@@ -37,22 +38,36 @@ def test_summary_table_has_every_setting(res):
 
 def _table():
     rows = []
-    for seg, kind, share, (w_l, b_l), (w_d, b_d) in [
-            ("Q4 fastest", "volume quartile", 0.7, (40.0, -6.0), (39.9, -0.5)),
-            ("Q1 slowest", "volume quartile", 0.05, (75.8, -15.0), (75.0, -20.0)),
-            ("FOODS_1", "department", 0.08, (47.9, -4.3), (49.2, -0.5))]:
-        rows.append(dict(segment_kind=kind, segment=seg, vol_share=share, model="LightGBM", wape=w_l, bias=b_l, abs_bias=abs(b_l)))
-        rows.append(dict(segment_kind=kind, segment=seg, vol_share=share, model=story.DL, wape=w_d, bias=b_d, abs_bias=abs(b_d)))
+    for seg, kind, share, (w_l, b_l), (w_d, b_d, pw, pb) in [
+            ("Q4 fastest", "volume quartile", 0.7, (40.0, -6.0), (39.9, -0.5, 0.30, 0.001)),
+            ("Q1 slowest", "volume quartile", 0.05, (75.8, -15.0), (75.0, -20.0, 0.01, 0.001)),
+            ("Q2", "volume quartile", 0.1, (60.0, -9.0), (59.9, -9.5, 0.02, 0.40)),
+            ("FOODS_1", "department", 0.08, (47.9, -4.3), (49.2, -0.5, 0.001, 0.002)),
+            ("FOODS_2", "department", 0.14, (45.3, -12.5), (44.3, -9.0, 0.001, 0.001))]:
+        rows.append(dict(segment_kind=kind, segment=seg, vol_share=share, model="LightGBM", wape=w_l, bias=b_l, abs_bias=abs(b_l),
+                         p_wape=float("nan"), p_abs_bias=float("nan")))
+        rows.append(dict(segment_kind=kind, segment=seg, vol_share=share, model=story.DL, wape=w_d, bias=b_d, abs_bias=abs(b_d),
+                         p_wape=pw, p_abs_bias=pb))
     return pd.DataFrame(rows)
 
 
-def test_where_bullets_sorts_segments_by_noise():
+def test_where_bullets_use_segment_p():
     b = story.where_bullets(_table())
-    assert b[0] == "N-HiTS Huber beats LightGBM on WMAPE beyond seed noise (±0.2): volume Q1 slowest (5% of volume), -0.8."
-    assert b[1] == "LightGBM beats N-HiTS Huber on WMAPE beyond seed noise (±0.2): FOODS_1 (8% of volume), +1.3."
+    assert b[0] == ("N-HiTS Huber beats LightGBM on WMAPE at p < 0.05 within the segment: FOODS_2 (14% of volume), -1.0, "
+                    "volume Q1 slowest (5% of volume), -0.8 and volume Q2 (10% of volume), -0.1.")
+    assert b[1] == "LightGBM beats N-HiTS Huber on WMAPE at p < 0.05 within the segment: FOODS_1 (8% of volume), +1.3."
     assert "volume Q4 fastest (70% of volume), -5.5pt" in b[2] and "FOODS_1 (8% of volume), -3.8pt" in b[2]
-    assert b[3].startswith("LightGBM beats N-HiTS Huber on |bias| beyond seed noise (±1pt): volume Q1 slowest")
-    assert b[4] == "WMAPE within seed noise in 1 of 3 segments: volume Q4 fastest (70% of volume)."
+    assert b[3].startswith("LightGBM beats N-HiTS Huber on |bias| at p < 0.05 within the segment: volume Q1 slowest")
+    assert b[4] == "No clear WMAPE difference (p ≥ 0.05) in 1 of 5 segments: volume Q4 fastest (70% of volume)."
+    assert b[5].startswith("Of the clear WMAPE differences, volume Q2 (10% of volume) is within the all-series seed-noise bar")
+
+
+def test_dl_lead_mirrors_lightgbm_lead_and_none():
+    r = story.dl_lead(_table())
+    assert (r["segment_kind"], r["segment"]) == ("department", "FOODS_2") and r["d_wmape"] == pytest.approx(-1.0)
+    t = _table()
+    t.loc[t.model == story.DL, "p_wape"] = 0.5
+    assert story.dl_lead(t) is None and story.lightgbm_lead(t) is None
 
 
 def test_lightgbm_lead_picks_largest_wmape_lead():
@@ -99,3 +114,32 @@ def test_group_line_names_split_metrics():
                           err_wrong=[40.0, 40.0], err_right=[45.0, 45.0], gain=[-5.0, -5.0]))
     line = story.group_line(t, pd.Series(True, index=t.index), ("LightGBM", "N-HiTS Huber"), "Seg")
     assert "The result splits by metric: LightGBM has the lower WMAPE (+5.00); N-HiTS Huber has the smaller |bias| (-4.0pt)" in line
+
+
+def test_example_line_flags_either_metric():
+    from m5knobs.examples import Pick
+    p = Pick(uid="x", rule="", rank=1, n_candidates=1, n_pattern=0, pattern_share=0.0, n_population=1, n_counted=1,
+             n_helped=0, n_hurt=0, n_changed=0, wmape_wrong=54.1, wmape_right=59.9, absbias_wrong=18.0, absbias_right=1.5)
+    t = story.example_line(p, ("LightGBM", "N-HiTS Huber"))
+    assert "On this series LightGBM has the lower WMAPE: the example was chosen by the rule above" in t
+    p.wmape_right = 50.0
+    assert "On this series" not in story.example_line(p, ("LightGBM", "N-HiTS Huber"))
+
+
+def test_spike_text_names_autoclip_spikes():
+    sp = {"a": dict(off=1.0, on=1754.4, off_recovered=True, on_recovered=True),
+          "b": dict(off=1.0, on=1.0, off_recovered=True, on_recovered=True)}
+    first, second = story.spike_text(sp, {"a": "LR 10x", "b": "filter off"})
+    assert "LR 10x: the AutoClip run spiked to 1,754.4× its best and recovered" in first and "filter off: no spike" in first
+    assert second.startswith("The larger spikes were in the AutoClip runs (LR 10x)")
+    sp["a"].update(off=50.0, on=1.0)
+    assert story.spike_text(sp, {"a": "LR 10x", "b": "filter off"})[1] == ""
+
+
+def test_example_line_favouring_first_side():
+    from m5knobs.examples import Pick
+    p = Pick(uid="x", rule="", rank=1, n_candidates=1, n_pattern=0, pattern_share=0.0, n_population=1, n_counted=1,
+             n_helped=0, n_hurt=0, n_changed=0, wmape_wrong=33.6, wmape_right=43.6, absbias_wrong=13.1, absbias_right=26.8)
+    assert "On this series" not in story.example_line(p, ("LightGBM", "N-HiTS Huber"), favours="wrong")
+    p.absbias_right = 5.0
+    assert "On this series N-HiTS Huber has the smaller |bias|" in story.example_line(p, ("LightGBM", "N-HiTS Huber"), favours="wrong")
