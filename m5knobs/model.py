@@ -1,4 +1,4 @@
-"""Stock NeuralForecast plus the few training settings the article's experiments depend on.
+"""The model: stock NeuralForecast plus the few training settings the experiments depend on.
 
 Everything here is either a plain NeuralForecast/Lightning argument set explicitly, or one of four small additions:
   * tweedie_zero_guard: NeuralForecast's own Tweedie output link, with the window mean floored at 0.01 so an all-zero input
@@ -151,7 +151,7 @@ def fit_stats(valid, norms, thresholds, n_clipped, max_steps, early_stop, fit_se
 
 
 class Knobs:
-    """One NeuralForecast model configured as in the article. Interface used by the experiment runner: fit, predict (optionally
+    """One NeuralForecast model configured with the recipe's settings. Interface used by the experiment runner: fit, predict (optionally
     from newer history with the fitted weights), .nf, ._gn (AutoClip record), ._lr (LR record), .fold_stats."""
 
     def __init__(self, arch="NHITS", h=13, input_size=52, loss="tweedie", seed=1, accelerator="mps", freq="W-SAT",

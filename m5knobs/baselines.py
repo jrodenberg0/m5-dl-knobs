@@ -1,5 +1,9 @@
-"""LightGBM baseline: Tweedie objective, lags 1..26, rolling mean/std/max/min over 4/13/26/52 weeks plus an expanding mean of
-lag 1, week/month/quarter calendar features. Trained with the direct strategy (one model per lead, max_horizon=13) by the runner."""
+"""The LightGBM baseline.
+
+Tweedie objective, lags 1..26, rolling mean/std/max/min over 4/13/26/52 weeks plus an expanding mean of lag 1,
+week/month/quarter calendar features. Trained with the direct strategy (one model per lead, max_horizon=13) by the runner
+in m5knobs.experiments.
+"""
 import lightgbm as lgb
 from mlforecast import MLForecast
 from mlforecast.lag_transforms import ExpandingMean, RollingMax, RollingMean, RollingMin, RollingStd

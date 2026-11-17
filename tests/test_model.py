@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 import torch
 
-import knobs
+from m5knobs import model
 
 
 class _Mod(torch.nn.Module):
@@ -21,7 +21,7 @@ def _step(cb, mod, grad):
 
 
 def test_autoclip_threshold_is_percentile_of_history_including_current():
-    cb, m = knobs.AutoClip(10.0), _Mod()
+    cb, m = model.AutoClip(10.0), _Mod()
     cb.on_train_start(None, m)
     assert _step(cb, m, [3.0, 4.0]) == pytest.approx(5.0)  # history [5] -> thr 5, not clipped
     after = _step(cb, m, [6.0, 8.0])  # history [5, 10] -> idx round(0.1*1)=0 -> thr 5
@@ -30,7 +30,7 @@ def test_autoclip_threshold_is_percentile_of_history_including_current():
 
 
 def test_autoclip_nonfinite_recorded_not_inserted():
-    cb, m = knobs.AutoClip(10.0), _Mod()
+    cb, m = model.AutoClip(10.0), _Mod()
     cb.on_train_start(None, m)
     _step(cb, m, [3.0, 4.0])
     _step(cb, m, [float("nan"), 0.0])
@@ -38,14 +38,14 @@ def test_autoclip_nonfinite_recorded_not_inserted():
 
 
 def test_autoclip_off_only_records():
-    cb, m = knobs.AutoClip(None), _Mod()
+    cb, m = model.AutoClip(None), _Mod()
     cb.on_train_start(None, m)
     assert _step(cb, m, [30.0, 40.0]) == pytest.approx(50.0)
     assert cb.thresholds == [] and cb.norms == pytest.approx([50.0])
 
 
 def test_best_weights_restores_best_snapshot():
-    cb, m = knobs.BestWeights(), _Mod()
+    cb, m = model.BestWeights(), _Mod()
     tr = SimpleNamespace(sanity_checking=False, callback_metrics={})
     cb.on_train_start(tr, m)
     for w, v in [([1.0, 1.0], 3.0), ([2.0, 2.0], 1.0), ([9.0, 9.0], 2.0)]:
@@ -57,7 +57,7 @@ def test_best_weights_restores_best_snapshot():
 
 
 def test_best_weights_ignores_sanity_check_and_nan():
-    cb, m = knobs.BestWeights(), _Mod()
+    cb, m = model.BestWeights(), _Mod()
     tr = SimpleNamespace(sanity_checking=True, callback_metrics={"ptl/val_loss": torch.tensor(0.1)})
     cb.on_train_start(tr, m)
     cb.on_validation_end(tr, m)
@@ -68,16 +68,16 @@ def test_best_weights_ignores_sanity_check_and_nan():
 
 def test_tweedie_is_stock_neuralforecast_except_zero_windows():
     from neuralforecast.losses.pytorch import DistributionLoss, tweedie_scale_decouple
-    loss = knobs.make_loss("tweedie", tweedie_rho=1.5)
+    loss = model.make_loss("tweedie", tweedie_rho=1.5)
     assert type(loss) is DistributionLoss and loss.distribution == "Tweedie"
-    assert loss.scale_decouple is knobs.tweedie_zero_guard
+    assert loss.scale_decouple is model.tweedie_zero_guard
     raw, scale = torch.tensor([[-3.0, 0.0, 2.0, 40.0]]), torch.ones(1, 4)
     loc = torch.tensor([[0.5, 2.0, 7.0, 3.0]])
-    ours, stock = knobs.tweedie_zero_guard((raw, 1.5), loc, scale)[0], tweedie_scale_decouple((raw, 1.5), loc, scale)[0]
+    ours, stock = model.tweedie_zero_guard((raw, 1.5), loc, scale)[0], tweedie_scale_decouple((raw, 1.5), loc, scale)[0]
     assert torch.equal(ours, stock)  # identical to stock wherever the window mean is >= 0.01
     raw = torch.zeros(1, 2, requires_grad=True)
     w = torch.ones(1, requires_grad=True)
-    mu, _ = knobs.tweedie_zero_guard((raw, 1.5), torch.tensor([[0.0, 2.0]]) * w, torch.ones(1, 2))
+    mu, _ = model.tweedie_zero_guard((raw, 1.5), torch.tensor([[0.0, 2.0]]) * w, torch.ones(1, 2))
     mu.sum().backward()
     assert torch.isfinite(mu).all() and torch.isfinite(raw.grad).all() and torch.isfinite(w.grad).all()
 
@@ -85,7 +85,7 @@ def test_tweedie_is_stock_neuralforecast_except_zero_windows():
 def test_pad_short_pads_to_val_size_plus_one():
     d = pd.DataFrame({"unique_id": ["a"] * 3 + ["b"] * 20, "ds": list(pd.date_range("2016-01-02", periods=3, freq="W-SAT")) +
                       list(pd.date_range("2015-01-03", periods=20, freq="W-SAT")), "y": 1.0})
-    p = knobs.pad_short(d, 13, "W-SAT")
+    p = model.pad_short(d, 13, "W-SAT")
     a = p[p.unique_id == "a"].sort_values("ds")
     assert len(a) == 14 and (a.y.iloc[:11] == 0).all() and a.ds.diff().dropna().eq(pd.Timedelta(weeks=1)).all()
     assert len(p[p.unique_id == "b"]) == 20
@@ -93,7 +93,7 @@ def test_pad_short_pads_to_val_size_plus_one():
 
 def test_validation_loader_keeps_last_partial_batch():
     import neuralforecast.common._base_model as nfbm
-    assert nfbm.TimeSeriesDataModule is knobs.KeepValBatchDataModule
+    assert nfbm.TimeSeriesDataModule is model.KeepValBatchDataModule
     seen = {}
 
     class Base:
@@ -103,7 +103,7 @@ def test_validation_loader_keeps_last_partial_batch():
         def train_dataloader(self):
             seen["train"] = self.drop_last
 
-    class T(knobs._ValFix, Base):
+    class T(model._ValFix, Base):
         pass
 
     dm = T()
@@ -117,7 +117,7 @@ def test_validation_loader_keeps_last_partial_batch():
 
 
 def test_built_model_matches_inventory():
-    k = knobs.Knobs(arch="NHITS", h=13, input_size=52, loss="tweedie", seed=1, accelerator="cpu", max_steps=5000)
+    k = model.Knobs(arch="NHITS", h=13, input_size=52, loss="tweedie", seed=1, accelerator="cpu", max_steps=5000)
     m = k.nf.models[0]
     assert m.hparams.scaler_type == "revin" and m.hparams.start_padding_enabled
     assert list(m.hparams.training_data_availability_threshold) == [0.05, 0.0] and m.hparams.drop_last_loader
@@ -128,12 +128,12 @@ def test_built_model_matches_inventory():
                                                  anneal_strategy="cos", cycle_momentum=False)
     assert m.trainer_kwargs["min_steps"] == 1500
     assert m.early_stop_patience_steps == 20 and m.val_check_steps == 50
-    assert m.loss.scale_decouple is knobs.tweedie_zero_guard
+    assert m.loss.scale_decouple is model.tweedie_zero_guard
     assert {type(c).__name__ for c in m.trainer_kwargs["callbacks"]} >= {"AutoClip", "BestWeights"}
 
 
 def test_overrides_reach_model():
-    k = knobs.Knobs(arch="NHITS", h=13, input_size=13, loss="huber", huber_delta=5.0, seed=1, accelerator="cpu", min_steps=0,
+    k = model.Knobs(arch="NHITS", h=13, input_size=13, loss="huber", huber_delta=5.0, seed=1, accelerator="cpu", min_steps=0,
                     early_stop_patience_steps=5, scaler_type="minmax", clip_percentile=None)
     m = k.nf.models[0]
     assert m.hparams.input_size == 13 and m.trainer_kwargs["min_steps"] == 0 and m.early_stop_patience_steps == 5
@@ -141,17 +141,17 @@ def test_overrides_reach_model():
 
 
 def test_fold_stats_from_trajectories():
-    st = knobs.fit_stats(valid=[(0, 9.0), (50, 3.0), (100, 2.0), (150, 2.5)], norms=[1.0, 2.0, 3.0], thresholds=[1.0, 1.0],
+    st = model.fit_stats(valid=[(0, 9.0), (50, 3.0), (100, 2.0), (150, 2.5)], norms=[1.0, 2.0, 3.0], thresholds=[1.0, 1.0],
                          n_clipped=1, max_steps=150, early_stop=True, fit_seconds=1.0)
     assert st["best_step"] == 100 and st["stop_step"] == 150 and st["hit_cap"] == 1.0 and st["grad_clip_frac"] == 0.5
     assert st["grad_norm_max"] == 3.0
 
 
 def test_availability_threshold_overridable():
-    k = knobs.Knobs(arch="NHITS", h=13, loss="tweedie", seed=1, accelerator="cpu", availability_threshold=[0.0, 0.0])
+    k = model.Knobs(arch="NHITS", h=13, loss="tweedie", seed=1, accelerator="cpu", availability_threshold=[0.0, 0.0])
     assert list(k.nf.models[0].hparams.training_data_availability_threshold) == [0.0, 0.0]
 
 
 def test_val_size_reaches_fit_padding():
-    k = knobs.Knobs(arch="NHITS", h=13, loss="huber", seed=1, accelerator="cpu", val_size=26)
+    k = model.Knobs(arch="NHITS", h=13, loss="huber", seed=1, accelerator="cpu", val_size=26)
     assert k.val_size == 26

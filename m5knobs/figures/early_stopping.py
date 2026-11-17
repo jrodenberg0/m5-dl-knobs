@@ -5,9 +5,10 @@ import os
 
 import pandas as pd
 
-import style
-from common import SEED_NOISE
-from style import COLORS, plt
+from m5knobs import paths, results
+from m5knobs.data import SEED_NOISE
+from m5knobs.figures import style
+from m5knobs.figures.style import COLORS, plt
 
 SWEEPS = [
     ("Patience window (steps)", "early_stop_patience_steps × val_check_steps",
@@ -30,14 +31,14 @@ def headline_text(t: pd.DataFrame, base: int = 1000) -> str:
 
 
 def _summary(arm, results_dir):
-    s = style.load_run(arm, results_dir)["summary"]
+    s = results.load_run(arm, results_dir)["summary"]
     fs = (s.get("fold_stats") or [{}])[0]
     return dict(wape=s["wape"], bias=s["bias"], best=fs.get("best_step"), stop=fs.get("stop_step"), cap=bool(fs.get("hit_cap")))
 
 
-def main(results_dir=style.RESULTS, out_dir=style.FIGURES):
+def draw(results_dir=paths.RESULTS, out_dir=paths.FIGURES):
     arms_needed = sorted({a for _, _, xs in SWEEPS for _, a in xs})
-    style.require(arms_needed, results_dir)
+    results.require(arms_needed, results_dir)
     style.apply()
     S = {a: _summary(a, results_dir) for a in arms_needed}
     base = S["es_p1000"]
@@ -66,7 +67,7 @@ def main(results_dir=style.RESULTS, out_dir=style.FIGURES):
         ax.text(0, 1.025, knob, transform=ax.transAxes, fontsize=6.6, family="monospace", color=COLORS["muted"], va="bottom")
         ax.set_ylabel("WAPE", fontsize=7)
     t = pd.DataFrame([dict(window=int(lab.replace(",", "")), wape=S[a]["wape"], bias=S[a]["bias"]) for lab, a in SWEEPS[0][2]])
-    n = style.actuals(results_dir)["unique_id"].nunique()
+    n = results.actuals(results_dir)["unique_id"].nunique()
     fig.text(0.01, 0.985, headline_text(t), fontsize=12.5, fontweight="bold", va="top")
     fig.text(0.01, 0.94, f"N-HiTS, Huber δ5, {n:,} M5 weekly series, single seed. One setting changes per panel; every run uses the same\n"
              f"learning-rate schedule (one-cycle over 10,000 steps, no minimum-steps guard). Blue dot = base (1,000-step window, 13-week\n"
@@ -75,6 +76,3 @@ def main(results_dir=style.RESULTS, out_dir=style.FIGURES):
     json.dump(S, open(os.path.join(results_dir, "es_sweep.json"), "w"), indent=1)
     return style.save(fig, "card_early_stopping_sweep", out_dir)
 
-
-if __name__ == "__main__":
-    print(main())

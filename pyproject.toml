@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "m5knobs"
+version = "0.1.0"
+description = "Which NeuralForecast training settings make deep learning work on intermittent weekly M5 demand"
+requires-python = ">=3.9"
+# dependencies: pip install -r requirements.txt
+
+[tool.setuptools.packages.find]
+include = ["m5knobs*"]

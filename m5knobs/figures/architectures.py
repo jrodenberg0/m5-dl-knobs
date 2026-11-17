@@ -1,12 +1,13 @@
-"""F4: LGBM vs N-HiTS vs TCN results table as an image (Medium doesn't render tables). Reads results/ only."""
+"""F4: LGBM vs N-HiTS vs TCN results table as an image. Reads results/ only."""
 import os
 
 import pandas as pd
 
-import style
-from common import H, NFOLDS, SEED_NOISE
-from style import COLORS, plt
-from verdict import _series_level, paired_bootstrap_p
+from m5knobs import paths, results
+from m5knobs.data import H, NFOLDS, SEED_NOISE
+from m5knobs.figures import style
+from m5knobs.figures.style import COLORS, join_words, plt
+from m5knobs.scoring import _series_level, paired_bootstrap_p
 
 ROWS = [("LGBM (baseline)", "f4_lgbm"), ("N-HiTS", "f4_nhits"), ("TCN", "f4_tcn")]
 
@@ -15,9 +16,9 @@ def _wape(d):
     return 100 * d["abs_err"].sum() / d["y_sum"].sum()
 
 
-def table(results_dir=style.RESULTS, n_boot=2000) -> pd.DataFrame:
-    style.require([a for _, a in ROWS], results_dir)
-    runs = {a: style.load_run(a, results_dir) for _, a in ROWS}
+def table(results_dir=paths.RESULTS, n_boot=2000) -> pd.DataFrame:
+    results.require([a for _, a in ROWS], results_dir)
+    runs = {a: results.load_run(a, results_dir) for _, a in ROWS}
     base = _series_level(runs["f4_lgbm"]["ps"])
     out = []
     for name, a in ROWS:
@@ -38,16 +39,29 @@ def headline_text(t: pd.DataFrame) -> str:
             parts.append(f"{r.model} beat {base} by {-r.gap_vs_lgbm:.2f} WAPE")
         elif r.read.startswith("worse (significant)"):
             parts.append(f"{r.model} trailed {base} by {r.gap_vs_lgbm:.2f} WAPE")
+        elif r.read.startswith("worse"):
+            parts.append(f"{r.model} trailed {base} by {r.gap_vs_lgbm:.2f} WAPE (not significant)")
+        elif r.read.startswith("better"):
+            parts.append(f"{r.model} led {base} by {-r.gap_vs_lgbm:.2f} WAPE (not significant)")
         else:
             parts.append(f"{r.model} was level with {base}")
-    return "; ".join(parts[:-1]) + (", and " if len(parts) > 1 else "") + parts[-1] if parts else ""
+    return join_words(parts)
 
 
-def main(results_dir=style.RESULTS, out_dir=style.FIGURES, n_boot=2000):
+def claim_text(t: pd.DataFrame) -> str:
+    """Verdict on 'deep learning can match gradient-boosted trees': holds if any deep model reads 'within seed noise' or 'better'."""
+    base = t.iloc[0]["model"].split(" (")[0]
+    level = [r.model for r in t.iloc[1:].itertuples() if r.read.startswith("better") or r.read == "within seed noise"]
+    if level:
+        return f"Level with or better than {base} on WAPE: {join_words(level)}. Verdict on the claim: holds."
+    return f"No deep model was level with or better than {base} on WAPE. Verdict on the claim: does not hold."
+
+
+def draw(results_dir=paths.RESULTS, out_dir=paths.FIGURES, n_boot=2000):
     t = table(results_dir, n_boot)
     t.to_csv(os.path.join(results_dir, "f4_table.csv"), index=False)
     style.apply()
-    n = style.load_run("f4_lgbm", results_dir)["ps"]["unique_id"].nunique()
+    n = results.load_run("f4_lgbm", results_dir)["ps"]["unique_id"].nunique()
     cols = [("Model", 0.02, "left"), ("WAPE", 0.32, "right"), ("Bias", 0.44, "right"), ("Δ vs LGBM", 0.62, "right"),
             ("p", 0.71, "right"), ("Read", 0.74, "left")]
     fig, ax = plt.subplots(figsize=(style.WIDTH, 0.55 * len(t) + 1.2))
@@ -81,6 +95,3 @@ def main(results_dir=style.RESULTS, out_dir=style.FIGURES, n_boot=2000):
                    y=0.95)
     return style.save(fig, "f4_table", out_dir)
 
-
-if __name__ == "__main__":
-    print(main())

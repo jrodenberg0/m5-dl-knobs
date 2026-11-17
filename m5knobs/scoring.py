@@ -1,12 +1,79 @@
-"""Pre-registered labeling rule for the mistakes grid (DESIGN.md, single-seed version): a measure is hurt when it moves in the
-worse direction and a paired bootstrap over series gives two-sided p < 0.05."""
+"""Scoring: per-step training traces, per-series forecast errors, and the labeling rule that turns a mistake/fix pair into a verdict.
+
+Labeling rule for the setting cards (single-seed version): a measure is hurt when it moves in the worse direction
+and a paired bootstrap over series gives two-sided p < 0.05.
+"""
 import numpy as np
 import pandas as pd
 
-from common import SEED_NOISE
+from m5knobs.data import H, SEED_NOISE
 
 ALPHA = 0.05
 LABELS = ("underfit", "biased", "both", "no clear effect on M5")
+
+
+def fit_trace(w) -> pd.DataFrame:
+    """One row per optimizer step of the last fit (1-based). Lightning's step-0 validation sanity check is dropped."""
+    m = w.nf.models[0]
+    norms = np.asarray(w._gn.norms, dtype=float)
+    n = len(norms)
+    tr = pd.DataFrame({"step": np.arange(1, n + 1), "grad_norm": norms})
+    th = np.full(n, np.nan)
+    if len(w._gn.thresholds):  # AutoClip appends a threshold only on steps with a finite norm
+        pos = np.flatnonzero(np.isfinite(norms))[:len(w._gn.thresholds)]
+        th[pos] = np.asarray(w._gn.thresholds, dtype=float)[:len(pos)]
+    tr["clip_thr"] = th
+    lr = np.full(n, np.nan)
+    lr[:min(n, len(w._lr.lr))] = w._lr.lr[:n]
+    tr["lr"] = lr
+    train = {int(g) + 1: float(v) for g, v in m.train_trajectories}
+    valid = {int(g): float(v) for g, v in m.valid_trajectories if g > 0}
+    tr["train_loss"] = tr["step"].map(train)
+    tr["val_loss"] = tr["step"].map(valid)
+    return tr
+
+
+def insample_mae_raw(w, train_df: pd.DataFrame) -> pd.DataFrame:
+    """Per-series in-sample absolute error in raw units, from non-overlapping H-step in-sample windows of the last fit."""
+    ins = w.nf.predict_insample(step_size=H)
+    col = next(c for c in ins.columns if c not in ("unique_id", "ds", "cutoff", "y"))
+    real = train_df[["unique_id", "ds", "y"]].rename(columns={"y": "y_true"})
+    m = ins[["unique_id", "ds", col]].merge(real, on=["unique_id", "ds"], how="inner")
+    m["abs_err"] = (m[col].clip(lower=0) - m["y_true"]).abs()
+    m["y_abs"] = m["y_true"].abs()
+    return m.groupby("unique_id", as_index=False)[["abs_err", "y_abs"]].sum()
+
+
+def _corr(f, a):
+    """Undefined (NaN) when actuals are flat; a flat forecast against moving actuals tracks nothing, so 0 (not dropped)."""
+    if np.std(a) == 0:
+        return np.nan
+    if np.std(f) == 0:
+        return 0.0
+    return float(np.corrcoef(f, a)[0, 1])
+
+
+def _amp(f, a):
+    sa = np.std(a)
+    return np.nan if sa == 0 else float(np.std(f) / sa)
+
+
+def per_series(fc: pd.DataFrame, actual: pd.DataFrame) -> pd.DataFrame:
+    """Per (series, cutoff) errors over the horizon. Missing forecasts count as 0; corr/amp_ratio NaN when undefined."""
+    m = actual.merge(fc[["unique_id", "ds", "cutoff", "yhat"]], on=["unique_id", "ds", "cutoff"], how="left")
+    m["yhat"] = m["yhat"].fillna(0.0)
+    m["e"] = (m["yhat"] - m["y"]).abs()
+    rows = []
+    for (uid, cut), g in m.groupby(["unique_id", "cutoff"], sort=False):
+        y, f = g["y"].to_numpy(float), g["yhat"].to_numpy(float)
+        rows.append((uid, cut, g["e"].sum(), y.sum(), f.sum(), _corr(f, y), _amp(f, y)))
+    return pd.DataFrame(rows, columns=["unique_id", "cutoff", "abs_err", "y_sum", "yhat_sum", "corr", "amp_ratio"])
+
+
+def summarize(ps: pd.DataFrame) -> dict:
+    ysum = ps["y_sum"].sum()
+    return dict(wape=float(100 * ps["abs_err"].sum() / ysum), bias=float(100 * (ps["yhat_sum"].sum() / ysum - 1)),
+                corr_median=float(np.nanmedian(ps["corr"])), amp_ratio_median=float(np.nanmedian(ps["amp_ratio"])))
 
 
 def paired_bootstrap_p(stat_fn, a: pd.DataFrame, b: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> float:

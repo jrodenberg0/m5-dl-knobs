@@ -7,20 +7,22 @@ import textwrap
 import numpy as np
 import pandas as pd
 
-import style
-from common import SEED_NOISE
-from style import COLORS, TINT, plt
-from verdict import row_verdict
+from m5knobs import paths, results
+from m5knobs.data import SEED_NOISE
+from m5knobs.figures import style
+from m5knobs.figures.style import COLORS, TINT, join_words, label_text, plt
+from m5knobs.scoring import row_verdict
 
 CARDS = [
-    dict(key="clipping", name="Gradient clipping", action="Clip your gradients", knob="gradient_clip_val",
-         source="PyTorch Lightning trainer argument, passed through by NeuralForecast. We use AutoClip on top of it.",
+    dict(key="clipping", name="Gradient clipping", action="Clip your gradients", knob="callbacks=[AutoClip(clip_percentile)]",
+         source="Lightning callback from m5knobs.model, passed in the model's callbacks. Lightning's gradient_clip_val is the "
+                "fixed-threshold alternative.",
          what="Before each weight update, if the gradient's total size is above a threshold, it is scaled down to that threshold; the "
               "direction is kept. AutoClip moves the threshold every step to the 10th percentile of the gradient sizes seen so far.",
          why="One promo week or launch spike in a batch can produce a very large Tweedie gradient and drag the whole fit with it.",
          mistake="f2_noclip", fix="f2_clip", m_label="clip off", f_label="AutoClip, 10th percentile", loss="Tweedie (rho 1.5)", diag="grad",
-         try_effect="Turn it on for likelihood losses (Tweedie, Poisson, NB); AutoClip saves you guessing a fixed gradient_clip_val.",
-         try_none="It didn't move the average on M5 at the recipe's learning rate; the stress test shows where it changes training."),
+         try_effect="Turn it on for Tweedie: AutoClip at the 10th percentile, or a fixed gradient_clip_val.",
+         try_none="Keep AutoClip on, and test with and without clipping again if you raise the learning rate."),
     dict(key="input_size", name="Input window", action="Show the model a full year", knob="input_size",
          source="NeuralForecast model argument: the length of history in each training window.",
          what="Each training example is input_size past weeks followed by the next h weeks to predict. The network only ever sees that "
@@ -28,7 +30,7 @@ CARDS = [
          why="Weekly retail demand repeats yearly. A 13-week window can't see last year, so the model falls back to the recent level.",
          mistake="f3_input13", fix="f3_fix", m_label="input_size = 13", f_label="input_size = 52", loss="Huber δ5", diag=None,
          try_effect="Start at one season (52 weekly, 12 monthly) or two, and shorten only if you have evidence.",
-         try_none="One season is a safe start; on M5 the shorter window didn't measurably hurt."),
+         try_none="Start at one season and shorten only with evidence from your own data."),
     dict(key="early_stopping", name="Early stopping", action="Give early stopping room", knob="early_stop_patience_steps × val_check_steps",
          source="NeuralForecast model arguments. Patience counts validation checks, so the window in optimizer steps is the product.",
          what="Every val_check_steps steps the model scores the held-out last h weeks. Training stops when that score hasn't improved "
@@ -36,16 +38,17 @@ CARDS = [
          why="Validation loss on intermittent demand is noisy and often plateaus before it improves again; a short window quits early.",
          mistake="f3_patience250", fix="f3_fix_noguard", m_label="5 × 50 = 250 steps", f_label="20 × 50 = 1,000 steps", loss="Huber δ5",
          diag="loss",
-         try_effect="Allow ~1,000 optimizer steps without improvement before stopping, and watch bias: longer training pushed it down here.",
-         try_none="A 1,000-step window costs little extra time; on M5 the short one didn't measurably hurt."),
-    dict(key="loss", name="Loss function", action="Use Huber, not MAE", knob="loss",
+         try_effect="Allow about 1,000 optimizer steps without improvement before stopping; a longer window can trade WAPE for bias, "
+                    "so check both.",
+         try_none="Set the window to about 1,000 steps, and check validation loss for plateaus before shortening it."),
+    dict(key="loss", name="Loss function", action="With a point loss, use Huber, not MAE", knob="loss",
          source="NeuralForecast model argument, e.g. loss=MAE() or loss=HuberLoss(delta=5). Computed on the scaled target.",
          what="MAE is minimized by the median of each forecast's distribution. Huber is squared for small errors and absolute for large "
               "ones, so it sits between the median and the mean; delta (in scaled units) sets where it switches.",
          why="On intermittent series the median week is often zero, so a median forecast under-calls total volume.",
          mistake="f3_mae", fix="f3_fix", m_label="loss = MAE()", f_label="loss = HuberLoss(delta=5)", loss="", diag="total",
          try_effect="Pick the loss by how you're scored: if total volume (bias) matters, avoid pure MAE; tune Huber's delta.",
-         try_none="On M5 the two losses ended up close; check bias, not just WAPE, on your own data."),
+         try_none="Check bias, not just WAPE, when you pick the loss for your own data."),
     dict(key="scaler", name="Input scaling", action="Use RevIN scaling", knob="scaler_type",
          source="NeuralForecast model argument: how each window is normalized before the network sees it.",
          what="'revin' subtracts each window's mean and divides by its standard deviation, then reverses that on the output. "
@@ -53,11 +56,12 @@ CARDS = [
          why="One spike sets a window's max, so MinMax squashes every other week toward zero. Note: Huber δ5 acts like MSE on [0, 1].",
          mistake="f3_minmax", fix="f3_fix", m_label="scaler_type = 'minmax'", f_label="scaler_type = 'revin'", loss="Huber δ5", diag=None,
          try_effect="Default to RevIN (or robust); avoid MinMax for spiky demand.",
-         try_none="RevIN is a fine default; on M5 MinMax wasn't measurably worse."),
+         try_none="Compare RevIN, robust and MinMax on your own data before settling on one."),
 ]
 
+NONE = "no clear effect on M5"
 HURT_WORDS = {"insample_mae": "fit to the training history", "corr": "week-to-week tracking",
-              "amp_ratio": "how much the forecast moves (it went flatter)"}
+              "amp_ratio": "how much the forecast moves, which went flatter"}
 ROW_NAMES = ["steady seller", "intermittent", "seasonal"]
 
 
@@ -71,18 +75,31 @@ def headline(card, v, ms, fs) -> str:
 
 
 def what_moved(v, m_label, ms=None, fs=None) -> str:
+    """What changed between the two runs, in numbers. 'Nothing moved' only when both gaps are inside the seed-noise bars. The
+    verdict rule only looks for harm from the wrong value, so a gap in its favour is stated here in words and numbers."""
+    wg, bg = v["wape_gap"], v["abs_bias_gap_pts"]
+    if v["label"] == NONE:
+        if abs(wg) <= SEED_NOISE["wape"] and abs(bg) <= SEED_NOISE["bias"]:
+            return f"Nothing moved beyond seed noise (WAPE Δ {wg:+.2f}, |bias| Δ {bg:+.1f}pt)."
+        both = ms is not None and fs is not None
+        moved = []
+        if abs(wg) > SEED_NOISE["wape"]:
+            moved.append(f"WAPE was {abs(wg):.2f} {'higher' if wg > 0 else 'lower'} with {m_label}"
+                         + (f" ({ms['wape']:.2f} vs {fs['wape']:.2f})" if both else ""))
+        if abs(bg) > SEED_NOISE["bias"]:
+            moved.append(f"|bias| was {abs(bg):.1f}pt {'larger' if bg > 0 else 'smaller'} with {m_label}"
+                         + (f" (bias {ms['bias']:+.1f}% vs {fs['bias']:+.1f}%)" if both else ""))
+        return f"Moved beyond seed noise without meeting the verdict rule: {join_words(moved)}."
     trade = ""
-    if v["abs_bias_gap_pts"] < -SEED_NOISE["bias"]:
-        trade = (f" Trade-off: bias moved from {ms['bias']:+.1f}% to {fs['bias']:+.1f}% with the fix (|bias| {-v['abs_bias_gap_pts']:.1f}pt "
-                 "larger)." if ms and fs else f" Trade-off: |bias| was {-v['abs_bias_gap_pts']:.1f}pt smaller with {m_label}.")
-    if v["label"] == "no clear effect on M5":
-        return f"Nothing moved beyond seed noise (WAPE Δ {v['wape_gap']:+.2f})." + trade
+    if bg < -SEED_NOISE["bias"]:
+        trade = (f" Trade-off: bias moved from {ms['bias']:+.1f}% to {fs['bias']:+.1f}% with the fix (|bias| {-bg:.1f}pt "
+                 "larger)." if ms and fs else f" Trade-off: |bias| was {-bg:.1f}pt smaller with {m_label}.")
     hurt = [HURT_WORDS[k] for k in HURT_WORDS if v[k]["hurt"]] if v["label"] in ("underfit", "both") else []
     parts = []
     if hurt:
-        parts.append(f"With {m_label}, these got worse: " + "; ".join(hurt) + f" (WAPE +{v['wape_gap']:.2f}).")
+        parts.append(f"With {m_label}, these got worse: " + join_words(hurt) + f" (WAPE +{wg:.2f}).")
     if v["label"] in ("biased", "both"):
-        parts.append(f"Total-volume bias was {v['abs_bias_gap_pts']:.1f}pt larger.")
+        parts.append(f"Total-volume bias was {bg:.1f}pt larger.")
     return " ".join(parts) + trade
 
 
@@ -196,14 +213,14 @@ class _Layout:
         return self.fig.add_axes([x0 / self.W, y / self.H, w / self.W, h / self.H])
 
 
-def build(card, results_dir=style.RESULTS, n_boot=2000):
-    style.require([card["mistake"], card["fix"]], results_dir)
+def build(card, results_dir=paths.RESULTS, n_boot=2000):
+    results.require([card["mistake"], card["fix"]], results_dir)
     style.apply()
-    m, f = style.load_run(card["mistake"], results_dir), style.load_run(card["fix"], results_dir)
+    m, f = results.load_run(card["mistake"], results_dir), results.load_run(card["fix"], results_dir)
     v = row_verdict(dict(ps=m["ps"], ins=m["ins"]), dict(ps=f["ps"], ins=f["ins"]), n_boot=n_boot)
-    act = style.actuals(results_dir)
-    ex = style.examples3(results_dir)
-    hist = style.example_history(results_dir)
+    act = results.actuals(results_dir)
+    ex = results.examples3(results_dir)
+    hist = results.example_history(results_dir)
     hist = pd.concat([hist, act[act.unique_id.isin(ex)][["unique_id", "ds", "y"]]]).drop_duplicates(["unique_id", "ds"])
     cut0, n = act["cutoff"].min(), act["unique_id"].nunique()
 
@@ -275,19 +292,51 @@ def build(card, results_dir=style.RESULTS, n_boot=2000):
     ra.annotate("\n".join(moved), xy=(0, 1), xycoords="axes fraction", va="top", fontsize=7.8, color="#222222", linespacing=1.3)
     ra.annotate("\n".join(trys), xy=(0, 1), xycoords="axes fraction", xytext=(0, -(len(moved) * 7.8 * 1.3 + 6)),
                 textcoords="offset points", va="top", fontsize=7.8, color="#222222", fontweight="bold", linespacing=1.3)
+    v.update(moved=what_moved(v, card["m_label"], m["summary"], f["summary"]), try_line=try_line,
+             wape=[m["summary"]["wape"], f["summary"]["wape"]], bias=[m["summary"]["bias"], f["summary"]["bias"]])
     return fig, v
 
 
-def main(results_dir=style.RESULTS, out_dir=style.FIGURES, n_boot=2000):
-    paths, verdicts = [], {}
+def verdict_text(card, v) -> str:
+    """One paragraph for a card from its card_verdicts.json entry (the same verdict and 'what moved' text as the card figure)."""
+    return (f"Compared: `{card['m_label']}` (without) vs `{card['f_label']}` (with). "
+            f"**Verdict on the 'without' run: {label_text(v['label'])}.** "
+            f"WAPE {v['wape'][0]:.2f} → {v['wape'][1]:.2f}, bias {v['bias'][0]:+.1f}% → {v['bias'][1]:+.1f}%. {v['moved']}")
+
+
+def _claim_verdict(k, n) -> str:
+    return "holds" if 2 * k > n else "mixed" if 2 * k == n else "does not hold"
+
+
+def claims(V) -> dict:
+    """Computed verdicts on two practitioner claims, from the one-way card verdicts (the label on each 'without' run, as on the
+    figures): most settings matter (underfit, biased or both) and wrong settings mostly cause underfitting."""
+    n = len(CARDS)
+    eff = [c for c in CARDS if V[c["key"]]["label"] != NONE]
+    under = [c for c in CARDS if V[c["key"]]["label"] in ("underfit", "both")]
+    names = lambda cs: f": {join_words(c['name'] for c in cs)}." if cs else "."  # noqa: E731
+    if eff:
+        top = max(eff, key=lambda c: abs(V[c["key"]]["wape_gap"]))
+        vt = V[top["key"]]
+        rel = f", {100 * abs(vt['wape_gap']) / vt['wape'][1]:.1f}% of the 'with' run's WAPE" if vt.get("wape") else ""
+        size = f" Largest WAPE gap among them: {vt['wape_gap']:+.2f} ({top['name']}{rel})."
+    else:
+        size = " No card met the verdict rule."
+    return dict(
+        handful=(f"{len(eff)} of {n} cards gave the wrong value a verdict of underfit or biased{names(eff)}{size} "
+                 f"Verdict on the claim, read as 'for most of the tested settings, the wrong value measurably hurts': "
+                 f"{_claim_verdict(len(eff), n)}."),
+        underfit=(f"{len(under)} of {n} cards gave the wrong value a verdict of underfit{names(under)} "
+                  f"Verdict on the claim, read as 'more than half of the cards are underfit': {_claim_verdict(len(under), n)}."))
+
+
+def draw(results_dir=paths.RESULTS, out_dir=paths.FIGURES, n_boot=2000):
+    saved, verdicts = [], {}
     for card in CARDS:
         fig, v = build(card, results_dir, n_boot)
-        verdicts[card["key"]] = dict(label=v["label"], wape_gap=v["wape_gap"], abs_bias_gap_pts=v["abs_bias_gap_pts"])
-        paths += style.save(fig, f"card_{card['key']}", out_dir)
+        verdicts[card["key"]] = {k: v[k] for k in ("label", "wape_gap", "abs_bias_gap_pts", "wape", "bias", "moved", "try_line")}
+        saved += style.save(fig, f"card_{card['key']}", out_dir)
     with open(os.path.join(results_dir, "card_verdicts.json"), "w") as fh:
         json.dump(verdicts, fh, indent=1)
-    return paths
+    return saved
 
-
-if __name__ == "__main__":
-    print("\n".join(main()))

@@ -1,4 +1,4 @@
-# Python 3.10-3.12 (verified in a fresh Python 3.12 venv; macOS, Apple M4 with MPS)
+# Python 3.9-3.12 (verified in a fresh Python 3.12 venv and locally on 3.9; macOS, Apple M4 with MPS)
 neuralforecast==3.1.2
 torch==2.5.1
 pytorch-lightning==2.5.2
@@ -15,3 +15,7 @@ pyarrow==21.0.0
 pillow==11.1.0
 tabulate==0.9.0
 pytest==8.4.1
+nbformat==5.10.4
+nbclient==0.10.2
+ipykernel==6.31.0
+ipython==8.18.1

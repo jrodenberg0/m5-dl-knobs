@@ -1,12 +1,12 @@
-"""Tiny synthetic results/ tree with the same files run_experiments.py writes, for figure tests."""
+"""Tiny synthetic results/ tree with the same files the experiment runner writes, for figure tests."""
 import json
 import os
 
 import numpy as np
 import pandas as pd
 
-import common
-from arms import ARMS
+from m5knobs import scoring
+from m5knobs.experiments import ARMS
 
 CUTS = [pd.Timestamp("2016-01-02") + pd.Timedelta(weeks=13 * i) for i in range(3)]
 
@@ -32,9 +32,9 @@ def make(results_dir, n_series=20, steps=50, seed=0):
         fc = act[["unique_id", "ds", "cutoff"]].copy()
         fc["yhat"] = np.clip(act["y"].to_numpy() + rng.normal(0, noise, len(fc)), 0, None)
         fc.to_parquet(os.path.join(d, "forecasts.parquet"))
-        ps = common.per_series(fc, act)
+        ps = scoring.per_series(fc, act)
         ps.to_parquet(os.path.join(d, "per_series.parquet"))
-        summ = common.summarize(ps)
+        summ = scoring.summarize(ps)
         summ["fold_stats"] = [{"best_step": 30.0, "stop_step": 45.0}]
         if a.arch != "LGBM":
             g = np.abs(rng.normal(1.0, 0.3, steps))
